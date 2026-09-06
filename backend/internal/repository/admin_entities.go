@@ -45,7 +45,7 @@ func (r *Repository) ProviderByCode(ctx context.Context, code string) (*model.Pr
 func (r *Repository) UpsertProvider(ctx context.Context, p *model.Provider) error {
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "code"}},
-		DoUpdates: clause.AssignmentColumns([]string{"name", "base_url", "protocol", "auth_type", "capabilities", "status", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"name", "base_url", "protocol", "auth_type", "capabilities", "status", "bill_on_failure", "updated_at"}),
 	}).Create(p).Error
 }
 
@@ -483,6 +483,15 @@ func (r *Repository) DeleteChannel(ctx context.Context, id int64) error {
 		}
 		return nil
 	})
+}
+
+// ChannelGroupsByChannel 某渠道已绑定的分组 id 列表（渠道管理读侧）。
+// 与 ChannelGroupIDs(group_id → channels) 方向相反，勿复用错位（曾误把渠道 id 当 group_id 查询返回错数据）。
+func (r *Repository) ChannelGroupsByChannel(ctx context.Context, channelID int64) ([]int64, error) {
+	var ids []int64
+	err := r.db.WithContext(ctx).Model(&model.ChannelGroup{}).
+		Where("channel_id = ?", channelID).Order("group_id ASC").Pluck("group_id", &ids).Error
+	return ids, err
 }
 
 // ReplaceChannelGroups 全量替换渠道可见分组（幂等）。

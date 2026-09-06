@@ -139,7 +139,12 @@ func (a *Admin) handleChannelGet(c *gin.Context) {
 		writeAdminError(c, http.StatusNotFound, "not_found", "渠道不存在")
 		return
 	}
-	groups, _ := a.Repo.ChannelGroupIDs(c.Request.Context(), id)
+	groups, err := a.Repo.ChannelGroupsByChannel(c.Request.Context(), id)
+	if err != nil {
+		a.log().Error("admin channel get", "id", id, "error", err)
+		writeAdminError(c, http.StatusInternalServerError, "server_error", "查询失败")
+		return
+	}
 	out := channelJSON(ch)
 	out["group_ids"] = groups
 	c.JSON(http.StatusOK, out)
@@ -332,11 +337,16 @@ func (a *Admin) handleChannelGroupsGet(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if ch, _ := a.Repo.ChannelByID(c.Request.Context(), id); ch == nil {
+	if ch, err := a.Repo.ChannelByID(c.Request.Context(), id); err != nil || ch == nil {
+		if err != nil {
+			a.log().Error("admin channel groups get", "id", id, "error", err)
+			writeAdminError(c, http.StatusInternalServerError, "server_error", "查询失败")
+			return
+		}
 		writeAdminError(c, http.StatusNotFound, "not_found", "渠道不存在")
 		return
 	}
-	gids, err := a.Repo.ChannelGroupIDs(c.Request.Context(), id)
+	gids, err := a.Repo.ChannelGroupsByChannel(c.Request.Context(), id)
 	if err != nil {
 		writeAdminError(c, http.StatusInternalServerError, "server_error", "查询失败")
 		return
@@ -356,11 +366,20 @@ func (a *Admin) handleChannelGroupsPut(c *gin.Context) {
 		writeAdminError(c, http.StatusBadRequest, "invalid_request", "group_ids 必填")
 		return
 	}
-	if ch, _ := a.Repo.ChannelByID(c.Request.Context(), id); ch == nil {
+	if ch, err := a.Repo.ChannelByID(c.Request.Context(), id); err != nil || ch == nil {
+		if err != nil {
+			a.log().Error("admin channel groups put", "id", id, "error", err)
+			writeAdminError(c, http.StatusInternalServerError, "server_error", "查询失败")
+			return
+		}
 		writeAdminError(c, http.StatusNotFound, "not_found", "渠道不存在")
 		return
 	}
 	if err := a.Repo.ReplaceChannelGroups(c.Request.Context(), id, body.GroupIDs); err != nil {
+		if repository.IsForeignKeyViolation(err) {
+			writeAdminError(c, http.StatusNotFound, "not_found", "存在不存在的分组")
+			return
+		}
 		a.log().Error("admin channel groups put", "id", id, "error", err)
 		writeAdminError(c, http.StatusInternalServerError, "server_error", "分组设置失败")
 		return

@@ -218,6 +218,47 @@ func TestB3ChannelsAdmin(t *testing.T) {
 		if cr.StatusCode != http.StatusOK || strings.Contains(string(craw2), "sk-rotated") {
 			t.Fatalf("凭证轮换应 200 且响应无明文: %d %s", cr.StatusCode, craw2)
 		}
+		// 分组绑定读回（修复：曾误用 group 侧查询（group_id=渠道 id）导致 group_ids 恒错）
+		gr := call("sk-b3-adm", http.MethodGet, chPath, nil)
+		gra, _ := io.ReadAll(gr.Body)
+		gr.Body.Close()
+		if gr.StatusCode != http.StatusOK || !strings.Contains(string(gra), fmt.Sprintf(`"group_ids":[%d]`, ug.ID)) {
+			t.Fatalf("渠道分组读回应含 %d: %d %s", ug.ID, gr.StatusCode, gra)
+		}
+		// PUT 含不存在分组 → 404（FK 违例映射，曾 500）
+		gb := call("sk-b3-adm", http.MethodPut, chPath+"/groups", map[string]any{"group_ids": []int64{ug.ID, 99999999}})
+		gb.Body.Close()
+		if gb.StatusCode != http.StatusNotFound {
+			t.Fatalf("含不存在分组应 404, got %d", gb.StatusCode)
+		}
+		// 删除渠道 → 204；再查 404
+		dl := call("sk-b3-adm", http.MethodDelete, chPath, nil)
+		dl.Body.Close()
+		if dl.StatusCode != http.StatusNoContent {
+			t.Fatalf("delete channel = %d", dl.StatusCode)
+		}
+		g404 := call("sk-b3-adm", http.MethodGet, chPath, nil)
+		g404.Body.Close()
+		if g404.StatusCode != http.StatusNotFound {
+			t.Fatalf("删除后 GET 应 404, got %d", g404.StatusCode)
+		}
+	})
+
+	t.Run("供应商 upsert bill_on_failure 持久化", func(t *testing.T) {
+		pcode := fmt.Sprintf("b3prov-%d", n)
+		pu := call("sk-b3-adm", http.MethodPost, admPath("/providers"), map[string]any{
+			"code": pcode, "name": "b3-prov", "protocol": "openai_compat", "base_url": "https://prov.example",
+			"auth_type": "bearer", "status": "active", "capabilities": []string{"stream"}, "bill_on_failure": true,
+		})
+		pu.Body.Close()
+		if pu.StatusCode != http.StatusOK {
+			t.Fatalf("upsert provider = %d", pu.StatusCode)
+		}
+		var pv model.Provider
+		if err := db.Where("code = ?", pcode).First(&pv).Error; err != nil || !pv.BillOnFailure {
+			t.Fatalf("bill_on_failure 应持久化 true（修复前 DoUpdates 漏该列假成功）: err=%v bill=%v", err, pv.BillOnFailure)
+		}
+		t.Cleanup(func() { _ = db.Unscoped().Delete(&model.Provider{}, pv.ID).Error })
 	})
 
 	t.Run("模型与定价 CRUD", func(t *testing.T) {

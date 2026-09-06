@@ -36,3 +36,10 @@ func IsUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
+
+// IsForeignKeyViolation 判定错误是否 PostgreSQL 外键违例（SQLSTATE 23503）。
+// 管理写端点绑定关联实体时用于把 FK 违例（引用不存在）映射为 404/400 而非 500。
+func IsForeignKeyViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23503"
+}
