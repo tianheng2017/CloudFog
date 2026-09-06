@@ -237,6 +237,9 @@ func TestB3AdminManage(t *testing.T) {
 		// super 仍可正常管理非 super 目标
 		must("sk-b3-super", http.MethodPost, fmt.Sprintf("/users/%d", target.ID)+"/balance",
 			map[string]string{"amount": "-1", "reason": "扣回"}, http.StatusOK)
+		// 不存在的目标：role 变更 → 404（曾 0 行假成功）、disable → 404
+		must("sk-b3-super", http.MethodPatch, "/users/999999999/role", map[string]string{"role": "user"}, http.StatusNotFound)
+		must("sk-b3-admin", http.MethodPost, "/users/999999999/disable", map[string]string{"reason": "x"}, http.StatusNotFound)
 	})
 
 	t.Run("创建分组全字段落库", func(t *testing.T) {

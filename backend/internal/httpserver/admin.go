@@ -389,6 +389,11 @@ func (a *Admin) handleUserRole(c *gin.Context) {
 		writeAdminError(c, http.StatusBadRequest, "invalid_request", "不允许修改自身角色（需另一超管操作）")
 		return
 	}
+	// 目标存在性（其余写端点均先查 prev 做 404，此端点曾遗漏——改不存在 id 会 Updates 0 行假成功）
+	if u, _ := a.Repo.UserByID(c.Request.Context(), id); u == nil {
+		writeAdminError(c, http.StatusNotFound, "not_found", "用户不存在")
+		return
+	}
 	var body struct {
 		Role string `json:"role"`
 	}
