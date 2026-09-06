@@ -22,18 +22,12 @@ import (
 // periodicBuilder 构造某周期任务的负载（json.RawMessage）。
 type periodicBuilder func() (json.RawMessage, error)
 
-// periodicBuilders 周期任务 builder 注册表：业务模块实现时经 registerPeriodicBuilder 注入，
-// 与 task 包 handler 注册表同理——builder 不存在则到点只记 debug 不投递（防无意义消息堆积）。
+// periodicBuilders 周期任务 builder 注册表：业务模块接入时向此注入 builder（预留表驱动，B1 未接线）。
+// builder 不存在则到点只记 debug 不投递（防无意义消息堆积）；读写一律经 periodicMu。
 var (
 	periodicMu       sync.RWMutex
 	periodicBuilders = map[task.TaskType]periodicBuilder{}
 )
-
-func registerPeriodicBuilder(ty task.TaskType, fn periodicBuilder) {
-	periodicMu.Lock()
-	defer periodicMu.Unlock()
-	periodicBuilders[ty] = fn
-}
 
 // runScheduler 启动 cron 引擎并阻塞至 ctx 取消。
 func runScheduler(ctx context.Context, cfg *config.Config, log *slog.Logger, runErr chan<- error) {
@@ -63,8 +57,6 @@ func runScheduler(ctx context.Context, cfg *config.Config, log *slog.Logger, run
 		if spec == "" {
 			continue
 		}
-		ty := ty
-		spec := spec
 		if _, err := c.AddFunc(spec, func() {
 			publishPeriodic(ctx, cfg, log, ty)
 		}); err != nil {
@@ -137,7 +129,7 @@ func schedulerEnqueuer(ctx context.Context, cfg *config.Config) (task.TaskEnqueu
 	}
 	res, err := task.NewResilient(primary, wal)
 	if err != nil {
-		primary.Close()
+		_ = primary.Close() // 构造失败：关闭已建连接，返回原始错误
 		return nil, err
 	}
 	enq = res

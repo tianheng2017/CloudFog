@@ -32,7 +32,7 @@ func loadOneDotEnv(path string) error {
 		}
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // 只读解析：错误经返回值传播
 
 	sc := bufio.NewScanner(f)
 	first := true

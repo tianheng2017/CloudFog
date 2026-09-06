@@ -41,7 +41,7 @@ func Up(dsn string) error {
 	if err != nil {
 		return err
 	}
-	defer m.Close()
+	defer func() { _, _ = m.Close() }() // 释放连接：错误无传播语义（返回路径已显式处理）
 	err = m.Up()
 	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("migrate up 失败: %w", err)
@@ -58,7 +58,7 @@ func Down(dsn string, steps int) error {
 	if err != nil {
 		return err
 	}
-	defer m.Close()
+	defer func() { _, _ = m.Close() }() // 释放连接：错误无传播语义（返回路径已显式处理）
 	err = m.Steps(-steps)
 	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("migrate down 失败: %w", err)
@@ -72,7 +72,7 @@ func Status(dsn string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	defer m.Close()
+	defer func() { _, _ = m.Close() }() // 释放连接：错误无传播语义（返回路径已显式处理）
 
 	current, dirty, verr := m.Version()
 	if verr != nil && !errors.Is(verr, migrate.ErrNilVersion) {
@@ -88,7 +88,9 @@ func Status(dsn string, out io.Writer) error {
 		return err
 	}
 
-	fmt.Fprintf(out, "%-24s %-40s %s\n", "VERSION", "FILE", "STATE")
+	if _, err := fmt.Fprintf(out, "%-24s %-40s %s\n", "VERSION", "FILE", "STATE"); err != nil {
+		return err
+	}
 	for _, mi := range list {
 		state := "pending"
 		if mi.version < current || (mi.version == current && verr == nil) {
@@ -97,10 +99,14 @@ func Status(dsn string, out io.Writer) error {
 		if dirty && mi.version == current {
 			state = "applied (dirty!)"
 		}
-		fmt.Fprintf(out, "%-24d %-40s %s\n", mi.version, mi.name, state)
+		if _, err := fmt.Fprintf(out, "%-24d %-40s %s\n", mi.version, mi.name, state); err != nil {
+			return err
+		}
 	}
 	if len(list) == 0 {
-		fmt.Fprintln(out, "（无迁移文件）")
+		if _, err := fmt.Fprintln(out, "（无迁移文件）"); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -151,7 +157,7 @@ func RequireSchemaVersion(dsn string, want uint64) error {
 	if err != nil {
 		return err
 	}
-	defer m.Close()
+	defer func() { _, _ = m.Close() }() // 释放连接：错误无传播语义（返回路径已显式处理）
 	v, _, err := m.Version()
 	if err != nil {
 		if errors.Is(err, migrate.ErrNilVersion) {

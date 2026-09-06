@@ -11,7 +11,6 @@ linters:
     - govet
     - staticcheck
     - unused
-    - gosimple
     - ineffassign
     - bodyclose
     - copyloopvar
@@ -23,10 +22,10 @@ linters:
       rules:
         - name: package-comments
           disabled: true
-
-issues:
-  exclude-rules:
-    # 测试文件允许非确定性断言辅助
-    - path: _test\.go
-      linters:
-        - errcheck
+  # v2：排除规则从 v1 的 issues.exclude-rules 迁移到此处
+  exclusions:
+    rules:
+      # 测试文件允许非确定性断言辅助
+      - path: _test\.go
+        linters:
+          - errcheck

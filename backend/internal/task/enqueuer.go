@@ -62,7 +62,7 @@ func NewRabbitEnqueuer(ctx context.Context, url, exchange string, policy RetryPo
 		return nil, err
 	}
 	if err := e.ensureTopology(ctx); err != nil {
-		e.Close()
+		_ = e.Close() // 拓扑声明失败：释放已建连接，返回原始错误
 		return nil, err
 	}
 	return e, nil
@@ -100,12 +100,12 @@ func (e *RabbitEnqueuer) connect(ctx context.Context) error {
 	}
 	ch, err := conn.Channel()
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return fmt.Errorf("task: 打开 channel 失败: %w", err)
 	}
 	if err := ch.Confirm(false); err != nil {
-		ch.Close()
-		conn.Close()
+		_ = ch.Close()
+		_ = conn.Close()
 		return fmt.Errorf("task: 开启 publisher confirm 失败: %w", err)
 	}
 	e.conn, e.ch = conn, ch
@@ -215,7 +215,8 @@ func (e *RabbitEnqueuer) publish(ctx context.Context, task Task, exchange, routi
 	}
 	// 一次自动重连重试（滚动发布/网络抖动场景）
 	if err2 := e.reconnectAndRetry(ctx, exchange, routingKey, pub); err2 != nil {
-		return fmt.Errorf("task: publish %s@%s 失败且重连重试仍失败: %w（原错误: %v）", routingKey, exchange, err2, err)
+		// 两个错误都要保留：重连失败为主因（%w），原发布错误经 errors.Join 一并包装
+		return fmt.Errorf("task: publish %s@%s 失败且重连重试仍失败: %w", routingKey, exchange, errors.Join(err2, err))
 	}
 	return nil
 }
@@ -256,12 +257,12 @@ func EnsureBrokerTopology(ctx context.Context, url, exchange string, policy Retr
 	if err != nil {
 		return fmt.Errorf("task: 连接 RabbitMQ 失败: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }() // 一次性拓扑校验：用完即弃
 	ch, err := conn.Channel()
 	if err != nil {
 		return err
 	}
-	defer ch.Close()
+	defer func() { _ = ch.Close() }() // 临时 channel 关闭错误无传播语义
 	return EnsureTopology(ch, exchange, reg, policy.RetryBuckets, policy.DelayBuckets)
 }
 

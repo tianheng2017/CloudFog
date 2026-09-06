@@ -12,10 +12,9 @@ import (
 
 // flakyPrimary broker 故障模拟：前 fail 次调用失败，之后恢复。
 type flakyPrimary struct {
-	mu    sync.Mutex
-	fail  int
-	got   []Task // 成功投递记录（含延迟任务标记忽略）
-	gotIn int
+	mu   sync.Mutex
+	fail int
+	got  []Task // 成功投递记录（含延迟任务标记忽略）
 }
 
 func (f *flakyPrimary) Enqueue(_ context.Context, t Task) error {

@@ -64,7 +64,7 @@ func RunConsumers(ctx context.Context, opts ConsumerOptions) error {
 	if err != nil {
 		return fmt.Errorf("task: worker 连接 RabbitMQ 失败: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }() // 主流程退出时释放连接（错误经 return 路径传播）
 
 	// 启动前拓扑自愈（幂等声明，失败即整体失败——避免所有 worker 因队列缺失静默退出）
 	if err := ensureTopologyOnce(conn, opts.Exchange, reg, opts.Policy); err != nil {
@@ -116,7 +116,7 @@ func ensureTopologyOnce(conn *amqp.Connection, exchange string, reg *Registry, p
 	if err != nil {
 		return fmt.Errorf("打开拓扑声明 channel 失败: %w", err)
 	}
-	defer ch.Close()
+	defer func() { _ = ch.Close() }() // 临时 channel：用完即弃，无需传播
 	return EnsureTopology(ch, exchange, reg, p.RetryBuckets, p.DelayBuckets)
 }
 
@@ -128,7 +128,7 @@ func worker(ctx context.Context, conn *amqp.Connection, queue string, cfg Consum
 		slog.Error("task: worker 打开 channel 失败", "queue", queue, "error", err)
 		return
 	}
-	defer ch.Close()
+	defer func() { _ = ch.Close() }() // worker 专属 channel：进程退出即释放
 	// 消费者 channel 也需开启 confirm：重试桶重发必须真实验证 broker 确认后再 Ack 原消息
 	// （01 §7.3：先确认重发成功，再 ack），否则确认形同虚设。
 	if err := ch.Confirm(false); err != nil {

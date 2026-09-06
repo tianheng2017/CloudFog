@@ -74,7 +74,7 @@ func ensureSuperAdmin(ctx context.Context, repo *repository.Repository, cfg Conf
 		Timezone:     "UTC",
 	}
 	admin.Source.Source = "user" // 引导创建的属主账号视作平台自建（02 §16：builtin|migration|user）
-	admin.Source.SourceID = nil
+	admin.SourceID = nil         // 显式：引导自建账号无外部系统 ID（02 §16，SourceID 可空）
 	return repo.CreateUser(ctx, admin)
 }
 

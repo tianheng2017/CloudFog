@@ -92,7 +92,7 @@ func (r *ResilientEnqueuer) appendWAL(e walEntry) error {
 	if err != nil {
 		return fmt.Errorf("task: 打开 WAL 失败: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // 追加写路径错误已显式返回，close 仅供释放
 	if _, err := f.Write(b); err != nil {
 		return fmt.Errorf("task: 写入 WAL 失败: %w", err)
 	}
@@ -165,7 +165,7 @@ func readWAL(path string) ([]walEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // 只读扫描：错误经返回值传播
 	var entries []walEntry
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), 1<<20)
@@ -191,36 +191,37 @@ func rewriteWAL(path string, entries []walEntry) error {
 	if err != nil {
 		return err
 	}
+	// abort 仅用于中途失败路径：关闭句柄并清理临时文件，错误已由调用方返回
+	abort := func() {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+	}
 	bw := bufio.NewWriter(f)
 	for _, e := range entries {
 		b, err := json.Marshal(e)
 		if err != nil {
-			f.Close()
-			os.Remove(tmp)
+			abort()
 			return err
 		}
 		if _, err := bw.Write(append(b, '\n')); err != nil {
-			f.Close()
-			os.Remove(tmp)
+			abort()
 			return err
 		}
 	}
 	if err := bw.Flush(); err != nil {
-		f.Close()
-		os.Remove(tmp)
+		abort()
 		return err
 	}
 	if err := f.Sync(); err != nil {
-		f.Close()
-		os.Remove(tmp)
+		abort()
 		return err
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return err
 	}
 	return nil
