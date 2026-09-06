@@ -11,6 +11,14 @@ import (
 
 // ── 鉴权读取（B2-2 中间件消费；此处只做纯数据查找，状态/过期判定属中间件层）────────
 
+// ListUserKeys 用户全部密钥（管理查看 07 §4.1 与自助列表共用数据源），按 id 倒序；
+// 调用方负责脱敏投影（key_hash 绝不出 repository）。
+func (r *Repository) ListUserKeys(ctx context.Context, userID int64) ([]model.APIKey, error) {
+	var ks []model.APIKey
+	err := r.db.WithContext(ctx).Where("user_id = ?", userID).Order("id DESC").Find(&ks).Error
+	return ks, err
+}
+
 // APIKeyByHash 按 key_hash 精确查密钥。key_hash 唯一（uk_api_keys_key_hash）；
 // 明文密钥不落库、不可按明文查。未命中返回 (nil, nil)。
 func (r *Repository) APIKeyByHash(ctx context.Context, hash string) (*model.APIKey, error) {

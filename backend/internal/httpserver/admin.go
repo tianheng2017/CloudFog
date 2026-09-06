@@ -67,7 +67,9 @@ func (a *Admin) Register(eng *gin.Engine) {
 	g.Use(RequestIDMiddleware(), APIKeyAuth(a.Store, a.Salt), RequireAdmin())
 	// 用户与分组
 	g.GET("/users", a.handleUsersList)
+	g.POST("/users", a.handleUserCreate)
 	g.GET("/users/:id", a.handleUserGet)
+	g.GET("/users/:id/keys", a.handleUserKeys)
 	g.PATCH("/users/:id", a.handleUserPatch)
 	g.POST("/users/:id/disable", a.handleUserDisable)
 	g.POST("/users/:id/enable", a.handleUserEnable)

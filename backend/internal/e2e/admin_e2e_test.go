@@ -327,4 +327,67 @@ func TestB3AdminManage(t *testing.T) {
 			t.Fatalf("组重名应 409, got %d", dup.StatusCode)
 		}
 	})
+
+	t.Run("管理创建用户与 Key 列表", func(t *testing.T) {
+		// admin 无权创建超管账号（横向提权拦截 → 403）
+		must("sk-b3-admin", http.MethodPost, "/users", map[string]any{
+			"username": "b3-nop", "email": "b3-nop@t.cn", "password": "S3cret-2026", "role": "super_admin",
+		}, http.StatusForbidden)
+		// super 创建普通用户：active + argon2id 密码哈希
+		uid2 := fmt.Sprintf("b3-new-%d", n)
+		cre := do("sk-b3-super", http.MethodPost, "/users", map[string]any{
+			"username": uid2, "email": uid2 + "@t.cn", "password": "S3cret-2026",
+			"default_group_id": target.DefaultGroupID,
+		})
+		raw, _ := io.ReadAll(cre.Body)
+		cre.Body.Close()
+		if cre.StatusCode != http.StatusOK {
+			t.Fatalf("create user = %d %s", cre.StatusCode, raw)
+		}
+		var created struct {
+			ID int64 `json:"id"`
+		}
+		if err := json.Unmarshal(raw, &created); err != nil || created.ID == 0 {
+			t.Fatalf("parse created user: %s", raw)
+		}
+		t.Cleanup(func() { _ = db.Unscoped().Delete(&model.User{}, created.ID).Error })
+		var nu model.User
+		if err := db.First(&nu, created.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if nu.Status != "active" || nu.PasswordHash == nil || !strings.HasPrefix(*nu.PasswordHash, "$argon2id$") {
+			t.Fatalf("创建用户应 active 且 argon2id 密码哈希: %+v", nu)
+		}
+		// 重复 username → 409
+		must("sk-b3-super", http.MethodPost, "/users", map[string]any{
+			"username": uid2, "email": uid2 + "-dup@t.cn", "password": "S3cret-2026",
+		}, http.StatusConflict)
+		// admin 可建普通用户（非超管）
+		admU := fmt.Sprintf("b3-admuser-%d", n)
+		ad := do("sk-b3-admin", http.MethodPost, "/users", map[string]any{
+			"username": admU, "email": admU + "@t.cn", "password": "S3cret-2026",
+		})
+		adRaw, _ := io.ReadAll(ad.Body)
+		ad.Body.Close()
+		if ad.StatusCode != http.StatusOK {
+			t.Fatalf("admin 建普通用户 = %d %s", ad.StatusCode, adRaw)
+		}
+		// Key 列表：新用户 seed key → 列表含前缀且绝不含 key_hash 字段（脱敏）
+		seedVal := fmt.Sprintf("sk-cf-%06d", n%1000000) // 明文仅测试短串（≤16 入库 key_prefix 列）
+		if err := db.Create(&model.APIKey{UserID: created.ID, GroupID: *nu.DefaultGroupID, Name: "b33-k",
+			KeyPrefix: seedVal, KeyHash: auth.HashKey(adminSalt, seedVal), Status: "active"}).Error; err != nil {
+			t.Fatal(err)
+		}
+		kl := do("sk-b3-super", http.MethodGet, fmt.Sprintf("/users/%d/keys", created.ID), nil)
+		kraw, _ := io.ReadAll(kl.Body)
+		kl.Body.Close()
+		if kl.StatusCode != http.StatusOK {
+			t.Fatalf("user keys = %d", kl.StatusCode)
+		}
+		if !strings.Contains(string(kraw), seedVal) || strings.Contains(string(kraw), `"key_hash"`) {
+			t.Fatalf("Key 列表应含前缀且绝不出现 key_hash: %s", kraw)
+		}
+		// 不存在用户 → 404
+		must("sk-b3-super", http.MethodGet, "/users/99999999/keys", nil, http.StatusNotFound)
+	})
 }
