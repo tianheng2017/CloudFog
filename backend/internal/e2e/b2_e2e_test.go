@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	openai "github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/option"
 	"github.com/redis/go-redis/v9"
 	"github.com/shopspring/decimal"
 	"gorm.io/driver/postgres"
@@ -72,15 +74,38 @@ func TestB2EndToEnd(t *testing.T) {
 	}
 	reserve := billing.NewReserve(cli, repo)
 
-	// mock 上游（OpenAI 兼容非流完成，带 usage）
+	// mock 上游：OpenAI 兼容（stream=true 走标准 SSE 分片，否则非流 JSON 带 usage）
 	var upstreamHits int32
 	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer sk-mock" {
 			http.Error(w, `{"error":{"message":"bad upstream auth"}}`, http.StatusUnauthorized)
 			return
 		}
+		body, _ := io.ReadAll(r.Body)
+		var q struct {
+			Stream bool `json:"stream"`
+		}
+		_ = json.Unmarshal(body, &q)
 		upstreamHits++
-		_, _ = io.WriteString(w, `{"id":"cmpl-mock","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"你好 E2E"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1000,"completion_tokens":200}}`)
+		if !q.Stream {
+			_, _ = io.WriteString(w, `{"id":"cmpl-mock","model":"gpt-4o","choices":[{"index":0,"message":{"role":"assistant","content":"你好 E2E"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1000,"completion_tokens":200}}`)
+			return
+		}
+		// 标准 OpenAI SSE 流：两个 content delta → finish → usage-only → [DONE]
+		fl, _ := w.(http.Flusher)
+		w.Header().Set("Content-Type", "text/event-stream")
+		chunks := []string{
+			`{"id":"chatcmpl-mock","object":"chat.completion.chunk","model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}`,
+			`{"id":"chatcmpl-mock","object":"chat.completion.chunk","model":"gpt-4o","choices":[{"index":0,"delta":{"content":"你好 SDK 流式"},"finish_reason":null}]}`,
+			`{"id":"chatcmpl-mock","object":"chat.completion.chunk","model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+			`{"id":"chatcmpl-mock","object":"chat.completion.chunk","model":"gpt-4o","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5}}`,
+		}
+		for _, c := range chunks {
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", c)
+			fl.Flush()
+		}
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+		fl.Flush()
 	}))
 	defer mock.Close()
 
@@ -196,6 +221,34 @@ func TestB2EndToEnd(t *testing.T) {
 		lc, _ := decimal.NewFromString(ledgerCost)
 		if !uc.Equal(lc) {
 			t.Fatalf("M3 不一致: usage=%s ledger=%s", uc, lc)
+		}
+	})
+
+	t.Run("官方 OpenAI SDK 流式对话（M1）", func(t *testing.T) {
+		// 用官方 openai-go SDK，仅改 base_url + api key 即完成一次流式对话（M1 验收原文）。
+		// 此前流式 chunk 缺 SSE "data: " 前缀/空行分隔（标准解析失败）——已修复；此用例即回归锁。
+		client := openai.NewClient(
+			option.WithAPIKey(e2eAPIKey),
+			option.WithBaseURL(srv.URL+"/v1"),
+		)
+		stream := client.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{
+			Model: openai.ChatModel("gpt-4o"),
+			Messages: []openai.ChatCompletionMessageParamUnion{
+				openai.UserMessage("你好，请自我介绍一下"),
+			},
+		})
+		defer stream.Close()
+		var sb strings.Builder
+		for stream.Next() {
+			for _, c := range stream.Current().Choices {
+				sb.WriteString(c.Delta.Content)
+			}
+		}
+		if err := stream.Err(); err != nil {
+			t.Fatalf("官方 SDK 流式请求失败: %v", err)
+		}
+		if got := sb.String(); !strings.Contains(got, "你好 SDK 流式") {
+			t.Fatalf("流式内容不符, got=%q", got)
 		}
 	})
 

@@ -151,24 +151,34 @@ func (a *API) writeChatStream(c *gin.Context, res *gateway.Result) {
 		return
 	}
 	chunkID := "chatcmpl-" + requestID(c)
-	enc := json.NewEncoder(c.Writer)
+	// 标准 OpenAI 兼容 SSE：每个事件须为 "data: <json>\n\n"（07 §2.1）。
+	// 此前直接用 JSON Encoder 输出裸 JSON（无 data: 前缀、无空行分隔），
+	// 官方 SDK 的 SSE 解析器无法识别——B2-7 官方 SDK 验收发现并修复。
+	writeSSE := func(v gin.H) error {
+		b, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		_, err = c.Writer.Write(append(append([]byte("data: "), b...), '\n', '\n'))
+		return err
+	}
 	for ev := range res.Events {
 		// 写入失败（客户端断连/写超时）即终止：defer 关闭上游 body，解析 goroutine 随之退出，
 		// 避免断线后仍持续拉取并消费上游 SSE。
 		switch ev.Type {
 		case ir.EvDelta:
-			if err := enc.Encode(streamChunk(chunkID, res.Channel.UpstreamModel, gin.H{"content": ev.Delta}, nil)); err != nil {
+			if err := writeSSE(streamChunk(chunkID, res.Channel.UpstreamModel, gin.H{"content": ev.Delta}, nil)); err != nil {
 				return
 			}
 		case ir.EvReasoningDelta:
-			if err := enc.Encode(streamChunk(chunkID, res.Channel.UpstreamModel, gin.H{"reasoning_content": ev.Delta}, nil)); err != nil {
+			if err := writeSSE(streamChunk(chunkID, res.Channel.UpstreamModel, gin.H{"reasoning_content": ev.Delta}, nil)); err != nil {
 				return
 			}
 		case ir.EvError:
 			a.log().Error("chat 流错误", "err", ev.Err)
 			return
 		case ir.EvDone:
-			if err := enc.Encode(streamChunk(chunkID, res.Channel.UpstreamModel, nil, &ev.FinishReason)); err != nil {
+			if err := writeSSE(streamChunk(chunkID, res.Channel.UpstreamModel, nil, &ev.FinishReason)); err != nil {
 				return
 			}
 			_, _ = fmt.Fprint(c.Writer, "data: [DONE]\n\n")
