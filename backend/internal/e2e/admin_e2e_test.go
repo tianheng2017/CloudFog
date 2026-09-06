@@ -263,4 +263,42 @@ func TestB3AdminManage(t *testing.T) {
 		}
 		_ = db.Unscoped().Delete(&model.Group{}, created.ID).Error
 	})
+
+	t.Run("自我禁用拒绝与分组筛选", func(t *testing.T) {
+		// 管理员禁用自身 → 400（防管理真空；需另一管理员操作）
+		must("sk-b3-admin", http.MethodPost, fmt.Sprintf("/users/%d", admin.ID)+"/disable",
+			map[string]string{"reason": "试试"}, http.StatusBadRequest)
+		// 建组 + 授权 target → 列表按 group_id 筛选命中 target
+		resp := do("sk-b3-admin", http.MethodPost, "/groups",
+			map[string]any{"name": fmt.Sprintf("b3-gs-%d", time.Now().UnixNano())})
+		var created struct {
+			ID int64 `json:"id"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&created)
+		resp.Body.Close()
+		must("sk-b3-admin", http.MethodPut, fmt.Sprintf("/users/%d", target.ID)+"/groups",
+			map[string]any{"group_ids": []int64{created.ID}}, http.StatusOK)
+		flist := do("sk-b3-admin", http.MethodGet, fmt.Sprintf("/users?group_id=%d", created.ID), nil)
+		var lb struct {
+			Items []struct {
+				ID int64 `json:"id"`
+			} `json:"items"`
+		}
+		_ = json.NewDecoder(flist.Body).Decode(&lb)
+		flist.Body.Close()
+		found := false
+		for _, it := range lb.Items {
+			if it.ID == target.ID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("group_id 筛选应命中 target, got %d items", len(lb.Items))
+		}
+		// 解绑 + 删组清理
+		must("sk-b3-admin", http.MethodPut, fmt.Sprintf("/users/%d", target.ID)+"/groups",
+			map[string]any{"group_ids": []int64{}}, http.StatusOK)
+		must("sk-b3-admin", http.MethodDelete, fmt.Sprintf("/groups/%d", created.ID), nil, http.StatusNoContent)
+	})
 }

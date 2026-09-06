@@ -125,14 +125,16 @@ func (r *Repository) UpdateUserProfile(ctx context.Context, id int64, p UserProf
 func (r *Repository) SetUserStatus(ctx context.Context, id int64, status string) error {
 	return r.db.WithContext(ctx).Model(&model.User{}).
 		Where("id = ?", id).
-		Updates(map[string]any{"status": status, "version": gorm.Expr("version + 1")}).Error
+		Updates(map[string]any{"status": status, "version": gorm.Expr("version + 1"),
+			"updated_at": time.Now().UTC()}).Error
 }
 
 // SetUserRole 修改角色（super_admin 专属，07 §4.1 / 08 §5.2）。
 func (r *Repository) SetUserRole(ctx context.Context, id int64, role string) error {
 	return r.db.WithContext(ctx).Model(&model.User{}).
 		Where("id = ?", id).
-		Updates(map[string]any{"role": role, "version": gorm.Expr("version + 1")}).Error
+		Updates(map[string]any{"role": role, "version": gorm.Expr("version + 1"),
+			"updated_at": time.Now().UTC()}).Error
 }
 
 // ReplaceAllowedGroups 全量替换用户可用分组（PUT 幂等，07 §4.1）。

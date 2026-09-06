@@ -139,7 +139,13 @@ func (a *Admin) audit(c *gin.Context, e auditEntry, result string) error {
 		ClientIP:   maskIP(c.ClientIP()),
 		UserAgent:  truncate(c.Request.UserAgent(), 512),
 	}
-	return a.Repo.InsertAudit(c.Request.Context(), rec)
+	if err := a.Repo.InsertAudit(c.Request.Context(), rec); err != nil {
+		// 审计不可静默丢失（08 §8）：操作可能已生效，此处必须留痕告警供人工核查。
+		a.log().Error("admin 审计写入失败（操作可能已生效，需人工核查）",
+			"action", e.Action, "target", e.TargetType+":"+e.TargetID, "result", result, "error", err)
+		return err
+	}
+	return nil
 }
 
 // maskIP 客户端 IP 掩码（08 §8：IPv4 末段、IPv6 后 64 位置零）。
@@ -193,9 +199,11 @@ func (a *Admin) handleUsersList(c *gin.Context) {
 		writeAdminError(c, http.StatusBadRequest, "invalid_request", "查询参数非法")
 		return
 	}
-	users, total, err := a.Repo.ListUsers(c.Request.Context(), repository.UserListFilter{
-		Role: q.Role, Status: q.Status, Keyword: q.Keyword, Offset: q.Offset, Limit: q.Limit,
-	})
+	f := repository.UserListFilter{Role: q.Role, Status: q.Status, Keyword: q.Keyword, Offset: q.Offset, Limit: q.Limit}
+	if q.GroupID > 0 {
+		f.GroupID = &q.GroupID
+	}
+	users, total, err := a.Repo.ListUsers(c.Request.Context(), f)
 	if err != nil {
 		a.log().Error("admin users list", "error", err)
 		writeAdminError(c, http.StatusInternalServerError, "server_error", "用户列表查询失败")
@@ -322,6 +330,15 @@ func (a *Admin) setUserActive(c *gin.Context, status string) {
 	action := "user.enable"
 	if status == "disabled" {
 		action = "user.disable"
+	}
+	if status == "disabled" {
+		if actorID, _ := actorOf(c); actorID != nil && *actorID == id {
+			// 防管理真空：admin/super 禁用自身会使自己凭据即刻失效且（若为最后超管）平台无人可管。
+			_ = a.audit(c, auditEntry{Action: action, TargetType: "user", TargetID: idStr(id),
+				After: map[string]any{"reason": "self_disable_denied", "denied": true}}, "failure")
+			writeAdminError(c, http.StatusBadRequest, "invalid_request", "不允许禁用自身账户（需另一管理员操作）")
+			return
+		}
 	}
 	if targetRequiresSuper(c, prev.Role) {
 		a.deny(c, action, "user", idStr(id), "无权启停 super_admin 用户")

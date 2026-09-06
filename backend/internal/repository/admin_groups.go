@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
@@ -94,6 +95,7 @@ func (r *Repository) UpdateGroup(ctx context.Context, id int64, p GroupPatch) er
 	if len(m) == 0 {
 		return nil
 	}
+	m["updated_at"] = time.Now().UTC()
 	res := r.db.WithContext(ctx).Model(&model.Group{}).Where("id = ?", id).Updates(m)
 	if res.Error != nil {
 		return res.Error
