@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"gorm.io/gorm"
@@ -17,6 +18,85 @@ func (r *Repository) ListUserKeys(ctx context.Context, userID int64) ([]model.AP
 	var ks []model.APIKey
 	err := r.db.WithContext(ctx).Where("user_id = ?", userID).Order("id DESC").Find(&ks).Error
 	return ks, err
+}
+
+// CreateAPIKey 落库新密钥（key_hash 唯一；明文不出现在参数中）。
+func (r *Repository) CreateAPIKey(ctx context.Context, k *model.APIKey) error {
+	return r.db.WithContext(ctx).Create(k).Error
+}
+
+// CountUserKeys 用户密钥数（08 §3.3 单用户上限 50 判定）。
+func (r *Repository) CountUserKeys(ctx context.Context, userID int64) (int64, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&model.APIKey{}).Where("user_id = ?", userID).Count(&n).Error
+	return n, err
+}
+
+// APIKeySelfPatch 用户自助修改自己的 Key 字段（08 §3.3）。
+type APIKeySelfPatch struct {
+	Name           *string
+	Status         *string
+	IPWhitelist    *[]string
+	ModelWhitelist *[]string
+}
+
+// Apply 转 map（[]string 字段序列化为 jsonb）。空片表示清空。
+func (p APIKeySelfPatch) Apply() (map[string]any, error) {
+	m := map[string]any{}
+	if p.Name != nil {
+		m["name"] = *p.Name
+	}
+	if p.Status != nil {
+		m["status"] = *p.Status
+	}
+	for col, v := range map[string]*[]string{"ip_whitelist": p.IPWhitelist, "model_whitelist": p.ModelWhitelist} {
+		if v != nil {
+			b, err := json.Marshal(*v)
+			if err != nil {
+				return nil, err
+			}
+			m[col] = json.RawMessage(b)
+		}
+	}
+	return m, nil
+}
+
+// UpdateAPIKeySelf 更新自己的 Key（归属强校验：id 且 user_id）。目标不存在/不属于本人返回 false。
+func (r *Repository) UpdateAPIKeySelf(ctx context.Context, id, userID int64, m map[string]any) (bool, error) {
+	if len(m) == 0 {
+		return false, nil
+	}
+	res := r.db.WithContext(ctx).Model(&model.APIKey{}).
+		Where("id = ? AND user_id = ?", id, userID).Updates(m)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
+}
+
+// DeleteAPIKeyByUser 删除自己的 Key（软删；鉴权查不到即即时失效）。目标不存在/不属于本人返回 false。
+func (r *Repository) DeleteAPIKeyByUser(ctx context.Context, id, userID int64) (bool, error) {
+	res := r.db.WithContext(ctx).Where("id = ? AND user_id = ?", id, userID).Delete(&model.APIKey{})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
+}
+
+// UserAllowedGroups 用户可用分组完整信息（自助 /me/groups 与 Key 创建分组选择，02 §3.4）。
+func (r *Repository) UserAllowedGroups(ctx context.Context, userID int64) ([]model.Group, error) {
+	ids, err := r.UserAllowedGroupIDs(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return []model.Group{}, nil
+	}
+	var gs []model.Group
+	if err := r.db.WithContext(ctx).Where("id IN ? AND status = 'active'", ids).Order("id ASC").Find(&gs).Error; err != nil {
+		return nil, err
+	}
+	return gs, nil
 }
 
 // APIKeyByHash 按 key_hash 精确查密钥。key_hash 唯一（uk_api_keys_key_hash）；

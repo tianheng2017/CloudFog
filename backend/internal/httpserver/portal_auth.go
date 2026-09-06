@@ -68,7 +68,17 @@ func (p *Portal) Register(eng *gin.Engine) {
 	authGrp.POST("/register", p.handleRegister)
 	authGrp.POST("/login", p.handleLogin)
 	authGrp.POST("/logout", p.sessionAuth(), p.handleLogout)
-	// 自助 /api/v1/me/*：b33-3（me/balance）与 b33-4（me/keys）挂载，sessionAuth 组级复用。
+
+	// 自助 /api/v1/me/*：会话鉴权组级（b33-3/b33-4）
+	me := eng.Group("/api/v1/me")
+	me.Use(RequestIDMiddleware(), p.sessionAuth())
+	me.GET("", p.handleMe)
+	me.GET("/balance", p.handleMeBalance)
+	me.GET("/groups", p.handleMeGroups)
+	me.GET("/keys", p.handleMyKeysList)
+	me.POST("/keys", p.handleMyKeysCreate)
+	me.PATCH("/keys/:id", p.handleMyKeysPatch)
+	me.DELETE("/keys/:id", p.handleMyKeysDelete)
 }
 
 func (p *Portal) blocked(login string) (time.Time, bool) {
