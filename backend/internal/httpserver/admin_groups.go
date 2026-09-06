@@ -132,8 +132,11 @@ func (a *Admin) handleGroupCreate(c *gin.Context) {
 		writeAdminError(c, http.StatusInternalServerError, "server_error", "创建失败（名称可能已存在）")
 		return
 	}
-	if p.AllowedModels != nil {
-		_ = a.Repo.UpdateGroup(c.Request.Context(), g.ID, p)
+	// 创建后一次性应用全部可选字段（fallback/rpm/并发/quota/sort 等）——此前仅补 allowed_models 会静默丢字段。
+	if err := a.Repo.UpdateGroup(c.Request.Context(), g.ID, p); err != nil {
+		a.log().Error("admin group create apply", "id", g.ID, "error", err)
+		writeAdminError(c, http.StatusInternalServerError, "server_error", "创建失败")
+		return
 	}
 	_ = a.audit(c, auditEntry{Action: "group.create", TargetType: "group", TargetID: idStr(g.ID), After: gin.H{"name": g.Name}}, "success")
 	c.JSON(http.StatusOK, groupJSON(*g))

@@ -89,6 +89,19 @@ func isSuper(c *gin.Context) bool {
 	return ok && p.User.Role == roleSuper
 }
 
+// targetRequiresSuper 等级保护（08 §5.3）：目标为 super_admin 时仅 super_admin 可管理，
+// 普通 admin 不得禁用/改资料/调账/改分组等操作超管账户（越权即横向提权）。
+func targetRequiresSuper(c *gin.Context, targetRole string) bool {
+	return targetRole == roleSuper && !isSuper(c)
+}
+
+// deny 记录越权/限权尝试（审计 failure）并返回 403。
+func (a *Admin) deny(c *gin.Context, action, targetType, targetID, reason string) {
+	_ = a.audit(c, auditEntry{Action: action, TargetType: targetType, TargetID: targetID,
+		After: map[string]any{"reason": reason, "denied": true}}, "failure")
+	writeAdminError(c, http.StatusForbidden, "permission_denied", reason)
+}
+
 // actorOf 管理操作主体（审计 ActorID/ActorType）。
 func actorOf(c *gin.Context) (*int64, string) {
 	if p, ok := PrincipalOf(c); ok {
@@ -251,6 +264,10 @@ func (a *Admin) handleUserPatch(c *gin.Context) {
 		writeAdminError(c, http.StatusNotFound, "not_found", "用户不存在")
 		return
 	}
+	if targetRequiresSuper(c, prev.Role) {
+		a.deny(c, "user.update", "user", idStr(id), "无权修改 super_admin 用户资料")
+		return
+	}
 	if err := a.Repo.UpdateUserProfile(c.Request.Context(), id, patch); err != nil {
 		writeAdminError(c, http.StatusBadRequest, "invalid_request", err.Error())
 		return
@@ -285,8 +302,15 @@ func (a *Admin) setUserActive(c *gin.Context, status string) {
 		Reason string `json:"reason"`
 	}
 	if status == "disabled" {
-		if err := c.ShouldBindJSON(&body); err != nil || strings.TrimSpace(body.Reason) == "" {
+		if err := c.ShouldBindJSON(&body); err != nil {
+			writeAdminError(c, http.StatusBadRequest, "invalid_request", "请求体非法")
+			return
+		}
+		if r := strings.TrimSpace(body.Reason); r == "" {
 			writeAdminError(c, http.StatusBadRequest, "invalid_request", "禁用必须填写原因")
+			return
+		} else if len(r) > 500 {
+			writeAdminError(c, http.StatusBadRequest, "invalid_request", "原因不能超过 500 字符")
 			return
 		}
 	}
@@ -295,15 +319,21 @@ func (a *Admin) setUserActive(c *gin.Context, status string) {
 		writeAdminError(c, http.StatusNotFound, "not_found", "用户不存在")
 		return
 	}
+	action := "user.enable"
+	if status == "disabled" {
+		action = "user.disable"
+	}
+	if targetRequiresSuper(c, prev.Role) {
+		a.deny(c, action, "user", idStr(id), "无权启停 super_admin 用户")
+		return
+	}
 	if err := a.Repo.SetUserStatus(c.Request.Context(), id, status); err != nil {
 		a.log().Error("admin user status", "error", err)
 		writeAdminError(c, http.StatusInternalServerError, "server_error", "状态变更失败")
 		return
 	}
-	action := "user.enable"
 	after := map[string]any{"status": status}
 	if status == "disabled" {
-		action = "user.disable"
 		after["reason"] = body.Reason
 	}
 	_ = a.audit(c, auditEntry{Action: action, TargetType: "user", TargetID: idStr(id),
@@ -318,6 +348,14 @@ func (a *Admin) handleUserRole(c *gin.Context) {
 	}
 	id, ok := pathID(c)
 	if !ok {
+		return
+	}
+	actorID, _ := actorOf(c)
+	if actorID != nil && *actorID == id {
+		// 防误锁死：super 不得修改自身角色（含自降级）；换人操作或直接改库。
+		_ = a.audit(c, auditEntry{Action: "user.role.update", TargetType: "user", TargetID: idStr(id),
+			After: map[string]any{"reason": "self_role_change_denied", "denied": true}}, "failure")
+		writeAdminError(c, http.StatusBadRequest, "invalid_request", "不允许修改自身角色（需另一超管操作）")
 		return
 	}
 	var body struct {
@@ -359,8 +397,15 @@ func (a *Admin) handleUserBalance(c *gin.Context) {
 		writeAdminError(c, http.StatusBadRequest, "invalid_request", "amount 非法或为 0")
 		return
 	}
+	if r := strings.TrimSpace(body.Reason); r == "" {
+		writeAdminError(c, http.StatusBadRequest, "invalid_request", "调账必须填写原因")
+		return
+	} else if len(r) > 500 {
+		writeAdminError(c, http.StatusBadRequest, "invalid_request", "原因不能超过 500 字符")
+		return
+	}
 	if amount.Abs().GreaterThan(manualAdjustLimit) && !isSuper(c) {
-		writeAdminError(c, http.StatusForbidden, "permission_denied", "单笔超过限额需 super_admin")
+		a.deny(c, "user.balance.adjust", "user", idStr(id), "单笔超过限额需 super_admin")
 		return
 	}
 	prev, _ := a.Repo.UserByID(c.Request.Context(), id)
@@ -368,7 +413,18 @@ func (a *Admin) handleUserBalance(c *gin.Context) {
 		writeAdminError(c, http.StatusNotFound, "not_found", "用户不存在")
 		return
 	}
+	// 等级保护 + 防自充值：admin 不得调 super_admin 账；任何人不得调自身账（防止以管理密钥自充，审计留痕改为他操作或走正式充值）。
 	opID, _ := actorOf(c)
+	if targetRequiresSuper(c, prev.Role) {
+		a.deny(c, "user.balance.adjust", "user", idStr(id), "无权调整 super_admin 账户余额")
+		return
+	}
+	if opID != nil && *opID == id {
+		_ = a.audit(c, auditEntry{Action: "user.balance.adjust", TargetType: "user", TargetID: idStr(id),
+			After: map[string]any{"reason": "self_adjust_denied", "denied": true}}, "failure")
+		writeAdminError(c, http.StatusBadRequest, "invalid_request", "不允许调整自身账户余额")
+		return
+	}
 	if err := a.Repo.ManualBalanceAdjust(c.Request.Context(), id, amount, body.Reason, opID); err != nil {
 		if errors.Is(err, repository.ErrNegativeBalance) {
 			writeAdminError(c, http.StatusBadRequest, "insufficient_balance", "调账后余额不可为负")
@@ -414,8 +470,13 @@ func (a *Admin) handleUserGroupsPut(c *gin.Context) {
 		writeAdminError(c, http.StatusBadRequest, "invalid_request", "group_ids 必填")
 		return
 	}
-	if u, _ := a.Repo.UserByID(c.Request.Context(), id); u == nil {
+	u, _ := a.Repo.UserByID(c.Request.Context(), id)
+	if u == nil {
 		writeAdminError(c, http.StatusNotFound, "not_found", "用户不存在")
+		return
+	}
+	if targetRequiresSuper(c, u.Role) {
+		a.deny(c, "user.groups.update", "user", idStr(id), "无权设置 super_admin 用户的分组")
 		return
 	}
 	if err := a.Repo.ReplaceAllowedGroups(c.Request.Context(), id, body.GroupIDs); err != nil {

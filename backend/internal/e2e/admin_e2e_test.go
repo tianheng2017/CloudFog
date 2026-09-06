@@ -214,4 +214,53 @@ func TestB3AdminManage(t *testing.T) {
 		must("sk-b3-admin", http.MethodPatch, fmt.Sprintf("/groups/%d", created.ID),
 			map[string]string{"name": "x"}, http.StatusNotFound)
 	})
+
+	t.Run("等级保护与自操作防护", func(t *testing.T) {
+		superPath := fmt.Sprintf("/users/%d", super.ID)
+		adminPathSelf := fmt.Sprintf("/users/%d", admin.ID)
+		// 普通 admin 禁用/调账 super_admin → 403 且写 failure 审计
+		must("sk-b3-admin", http.MethodPost, superPath+"/disable", map[string]string{"reason": "越权尝试"}, http.StatusForbidden)
+		must("sk-b3-admin", http.MethodPost, superPath+"/balance", map[string]string{"amount": "10", "reason": "越权调账"}, http.StatusForbidden)
+		var failedAudits int64
+		if err := db.Model(&model.AuditLog{}).
+			Where("action='user.disable' AND result='failure' AND target_id = ?", fmt.Sprint(super.ID)).Count(&failedAudits).Error; err != nil {
+			t.Fatal(err)
+		}
+		if failedAudits != 1 {
+			t.Fatalf("越权禁用应写 1 条 failure 审计, got %d", failedAudits)
+		}
+		// super 不得修改自身角色（防锁死）
+		must("sk-b3-super", http.MethodPatch, superPath+"/role", map[string]string{"role": "user"}, http.StatusBadRequest)
+		// 任何人不得用管理密钥调自身余额（防自充）
+		must("sk-b3-admin", http.MethodPost, adminPathSelf+"/balance", map[string]string{"amount": "5", "reason": "自充"}, http.StatusBadRequest)
+		// super 仍可正常管理非 super 目标
+		must("sk-b3-super", http.MethodPost, fmt.Sprintf("/users/%d", target.ID)+"/balance",
+			map[string]string{"amount": "-1", "reason": "扣回"}, http.StatusOK)
+	})
+
+	t.Run("创建分组全字段落库", func(t *testing.T) {
+		resp := do("sk-b3-admin", http.MethodPost, "/groups",
+			map[string]any{"name": fmt.Sprintf("b3-gf-%d", time.Now().UnixNano()),
+				"rate_multiplier": "2", "fallback_models": []string{"gpt-4o-mini"},
+				"rpm_limit": 60, "concurrency_limit": 3})
+		var created struct {
+			ID int64 `json:"id"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&created)
+		resp.Body.Close()
+		if created.ID == 0 {
+			t.Fatal("组创建失败")
+		}
+		var g model.Group
+		if err := db.First(&g, created.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if len(g.FallbackModels) != 1 || g.FallbackModels[0] != "gpt-4o-mini" {
+			t.Fatalf("fallback_models 未落库: %+v", g.FallbackModels)
+		}
+		if g.RPMLimit != 60 || g.ConcurrencyLimit != 3 {
+			t.Fatalf("rpm/并发未落库: %+v", g)
+		}
+		_ = db.Unscoped().Delete(&model.Group{}, created.ID).Error
+	})
 }
