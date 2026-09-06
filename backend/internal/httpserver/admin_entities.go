@@ -89,6 +89,52 @@ type modelReq struct {
 	Status          string   `json:"status"`
 }
 
+// modelPatchReq 模型 PATCH：指针表达"未提供字段保持现值"，
+// 杜绝非指针结构把缺省字段清零（如 PATCH {} 曾把 name/context_window 清空致模型损坏）。
+type modelPatchReq struct {
+	Name            *string   `json:"name"`
+	ProviderCode    *string   `json:"provider_code"`
+	DisplayName     *string   `json:"display_name"`
+	ContextWindow   *int      `json:"context_window"`
+	MaxOutputTokens *int      `json:"max_output_tokens"`
+	Capabilities    *[]string `json:"capabilities"`
+	BillingMode     *string   `json:"billing_mode"`
+	Fallbacks       *[]string `json:"fallbacks"`
+	Status          *string   `json:"status"`
+}
+
+func (r modelPatchReq) fields() map[string]any {
+	m := map[string]any{}
+	if r.Name != nil {
+		m["name"] = *r.Name
+	}
+	if r.ProviderCode != nil {
+		m["provider_code"] = *r.ProviderCode
+	}
+	if r.DisplayName != nil {
+		m["display_name"] = *r.DisplayName
+	}
+	if r.ContextWindow != nil {
+		m["context_window"] = *r.ContextWindow
+	}
+	if r.MaxOutputTokens != nil {
+		m["max_output_tokens"] = *r.MaxOutputTokens
+	}
+	if r.Capabilities != nil {
+		m["capabilities"] = *r.Capabilities
+	}
+	if r.BillingMode != nil {
+		m["billing_mode"] = *r.BillingMode
+	}
+	if r.Fallbacks != nil {
+		m["fallbacks"] = *r.Fallbacks
+	}
+	if r.Status != nil {
+		m["status"] = *r.Status
+	}
+	return m
+}
+
 func modelJSON(m model.Model) gin.H {
 	return gin.H{"id": m.ID, "name": m.Name, "provider_code": m.ProviderCode,
 		"display_name": m.DisplayName, "context_window": m.ContextWindow,
@@ -141,15 +187,18 @@ func (a *Admin) handleModelPatch(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var req modelReq
+	var req modelPatchReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		writeAdminError(c, http.StatusBadRequest, "invalid_request", "请求体非法")
 		return
 	}
-	m := &model.Model{Name: req.Name, ProviderCode: req.ProviderCode, DisplayName: req.DisplayName,
-		ContextWindow: req.ContextWindow, MaxOutputTokens: req.MaxOutputTokens,
-		Capabilities: req.Capabilities, BillingMode: req.BillingMode, Fallbacks: req.Fallbacks, Status: req.Status}
-	if err := a.Repo.UpdateModel(c.Request.Context(), id, m); err != nil {
+	fields := req.fields()
+	if len(fields) == 0 {
+		writeAdminError(c, http.StatusBadRequest, "invalid_request", "没有可更新的字段")
+		return
+	}
+	// PATCH 语义：仅更新传入字段（指针结构），未提供字段保持现值——此前非指针结构会把 name/context 等清零。
+	if err := a.Repo.UpdateModelFields(c.Request.Context(), id, fields); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			writeAdminError(c, http.StatusNotFound, "not_found", "模型不存在")
 			return
@@ -158,6 +207,7 @@ func (a *Admin) handleModelPatch(c *gin.Context) {
 			writeAdminError(c, http.StatusConflict, "conflict", "模型名已存在")
 			return
 		}
+		a.log().Error("admin model patch", "id", id, "error", err)
 		writeAdminError(c, http.StatusInternalServerError, "server_error", "更新失败")
 		return
 	}
@@ -315,6 +365,35 @@ func (a *Admin) handlePriceCreate(c *gin.Context) {
 	c.JSON(http.StatusOK, priceJSON(*p))
 }
 
+// mergePriceReq PATCH 语义：未提供的字段继承现值（金额不会被缺省清 0、currency 不会回退 USD、
+// effective_to/cache 保持现值）。显式空串金额 = 显式清零；cache 显式空串视为未提供（MVP 不支持单独清除）。
+func mergePriceReq(r priceReq, cur *model.ModelPrice) priceReq {
+	if r.Currency == "" {
+		r.Currency = cur.Currency
+	}
+	if strings.TrimSpace(r.InputPer1K) == "" {
+		r.InputPer1K = cur.InputPricePer1K.String()
+	}
+	if strings.TrimSpace(r.OutputPer1K) == "" {
+		r.OutputPer1K = cur.OutputPricePer1K.String()
+	}
+	if strings.TrimSpace(r.PerRequest) == "" {
+		r.PerRequest = cur.PerRequestPrice.String()
+	}
+	if (r.CacheReadPer1K == nil || strings.TrimSpace(*r.CacheReadPer1K) == "") && cur.CacheReadPricePer1K != nil {
+		s := cur.CacheReadPricePer1K.String()
+		r.CacheReadPer1K = &s
+	}
+	if (r.CacheWritePer1K == nil || strings.TrimSpace(*r.CacheWritePer1K) == "") && cur.CacheWritePricePer1K != nil {
+		s := cur.CacheWritePricePer1K.String()
+		r.CacheWritePer1K = &s
+	}
+	if strings.TrimSpace(r.EffectiveFrom) == "" {
+		r.EffectiveFrom = cur.EffectiveFrom.Format(time.RFC3339)
+	}
+	return r
+}
+
 func (a *Admin) handlePricePatch(c *gin.Context) {
 	id, ok := pathID(c)
 	if !ok {
@@ -335,7 +414,8 @@ func (a *Admin) handlePricePatch(c *gin.Context) {
 		writeAdminError(c, http.StatusInternalServerError, "server_error", "查询失败")
 		return
 	}
-	p, err := req.build(cur.ModelID)
+	// PATCH 合并现值：未提供金额不得被清零（曾有 PATCH 只改有效日把 0.05 清成 0 白送流量）
+	p, err := mergePriceReq(req, cur).build(cur.ModelID)
 	if err != nil {
 		writeAdminError(c, http.StatusBadRequest, "invalid_request", err.Error())
 		return

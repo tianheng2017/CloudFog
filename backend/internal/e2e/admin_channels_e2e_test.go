@@ -206,6 +206,18 @@ func TestB3ChannelsAdmin(t *testing.T) {
 		if eresp.StatusCode != http.StatusOK {
 			t.Fatalf("enable 后应恢复 200, got %d", eresp.StatusCode)
 		}
+		// 空 PATCH → 400（曾走 repo 错误变 500）；仅凭证轮换 → 200 且响应无明文
+		ep := call("sk-b3-adm", http.MethodPatch, chPath, map[string]any{})
+		ep.Body.Close()
+		if ep.StatusCode != http.StatusBadRequest {
+			t.Fatalf("空 PATCH 应 400, got %d", ep.StatusCode)
+		}
+		cr := call("sk-b3-adm", http.MethodPatch, chPath, map[string]any{"credentials": map[string]any{"api_key": "sk-rotated"}})
+		craw2, _ := io.ReadAll(cr.Body)
+		cr.Body.Close()
+		if cr.StatusCode != http.StatusOK || strings.Contains(string(craw2), "sk-rotated") {
+			t.Fatalf("凭证轮换应 200 且响应无明文: %d %s", cr.StatusCode, craw2)
+		}
 	})
 
 	t.Run("模型与定价 CRUD", func(t *testing.T) {
@@ -227,12 +239,47 @@ func TestB3ChannelsAdmin(t *testing.T) {
 		preq := map[string]any{"currency": "USD", "input_price_per_1k": "0.02", "output_price_per_1k": "0.05",
 			"per_request_price": "0", "effective_from": "2026-06-01"}
 		p1 := call("sk-b3-adm", http.MethodPost, fmt.Sprintf("%s/model-prices?model_id=%d", admPath(""), created.ID), preq)
+		p1raw, _ := io.ReadAll(p1.Body)
 		p1.Body.Close()
 		if p1.StatusCode != http.StatusOK {
 			t.Fatalf("create price = %d", p1.StatusCode)
 		}
-		// 同生效日重复 → 409
-		p2 := call("sk-b3-adm", http.MethodPost, fmt.Sprintf("%s/model-prices?model_id=%d", admPath(""), created.ID), preq)
+		var pcreated struct {
+			ID int64 `json:"id"`
+		}
+		_ = json.Unmarshal(p1raw, &pcreated)
+		// PATCH 模型：仅改 display_name → name/context 保留（防清零）
+		mp := call("sk-b3-adm", http.MethodPatch, admPath(fmt.Sprintf("/models/%d", created.ID)),
+			map[string]any{"display_name": "renamed"})
+		mp.Body.Close()
+		if mp.StatusCode != http.StatusOK {
+			t.Fatalf("patch model = %d", mp.StatusCode)
+		}
+		var gotM model.Model
+		if err := db.First(&gotM, created.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if gotM.Name != mName || gotM.ContextWindow != 8000 || gotM.DisplayName != "renamed" {
+			t.Fatalf("模型 PATCH 应保留未提供字段: name=%q ctx=%d disp=%q", gotM.Name, gotM.ContextWindow, gotM.DisplayName)
+		}
+		// PATCH 价格：仅改 effective_from → input 0.02 保留（曾因非指针结构把金额清 0）
+		pp := call("sk-b3-adm", http.MethodPatch, admPath(fmt.Sprintf("/model-prices/%d", pcreated.ID)),
+			map[string]string{"effective_from": "2026-07-01"})
+		pp.Body.Close()
+		if pp.StatusCode != http.StatusOK {
+			t.Fatalf("patch price = %d", pp.StatusCode)
+		}
+		var gotP model.ModelPrice
+		if err := db.First(&gotP, pcreated.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if gotP.InputPricePer1K.String() != "0.02" || gotP.OutputPricePer1K.String() != "0.05" {
+			t.Fatalf("价格 PATCH 应保留金额现值: in=%s out=%s", gotP.InputPricePer1K, gotP.OutputPricePer1K)
+		}
+		// 与 patch 后同生效日（2026-07-01）重复创建 → 409
+		dupReq := map[string]any{"currency": "USD", "input_price_per_1k": "0.02", "output_price_per_1k": "0.05",
+			"per_request_price": "0", "effective_from": "2026-07-01"}
+		p2 := call("sk-b3-adm", http.MethodPost, fmt.Sprintf("%s/model-prices?model_id=%d", admPath(""), created.ID), dupReq)
 		p2.Body.Close()
 		if p2.StatusCode != http.StatusConflict {
 			t.Fatalf("重复生效日应 409, got %d", p2.StatusCode)

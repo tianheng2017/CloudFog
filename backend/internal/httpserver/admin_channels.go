@@ -217,6 +217,16 @@ func (a *Admin) handleChannelPatch(c *gin.Context) {
 		writeAdminError(c, http.StatusNotFound, "not_found", "渠道不存在")
 		return
 	}
+	p, err := req.toPatch()
+	if err != nil {
+		writeAdminError(c, http.StatusBadRequest, "invalid_request", "倍率/系数须为合法十进制")
+		return
+	}
+	p.ProviderCode = nil // provider_code 变更需同步 provider_id，不允许经 PATCH 单独改（防不一致）
+	if emptyPatch(p) && req.Credentials == nil {
+		writeAdminError(c, http.StatusBadRequest, "invalid_request", "没有可更新的字段")
+		return
+	}
 	if req.Credentials != nil {
 		if err := a.Repo.SetChannelCredentials(c.Request.Context(), id, func(cid int64, plain map[string]any) (map[string]any, error) {
 			return a.sealChannelCreds(cid, plain)
@@ -227,13 +237,8 @@ func (a *Admin) handleChannelPatch(c *gin.Context) {
 		}
 		_ = a.audit(c, auditEntry{Action: "channel.credential.rotate", TargetType: "channel", TargetID: idStr(id)}, "success")
 	}
-	p, err := req.toPatch()
-	if err != nil {
-		writeAdminError(c, http.StatusBadRequest, "invalid_request", "倍率/系数须为合法十进制")
-		return
-	}
-	p.ProviderCode = nil // provider_code 变更需同步 provider_id，不允许经 PATCH 单独改（防不一致）
-	if len(req.Credentials) > 0 && emptyPatch(p) {
+	if emptyPatch(p) {
+		// 仅凭证轮换（无基础字段变更）→ 直接返回脱敏详情
 		ch, _ := a.Repo.ChannelByID(c.Request.Context(), id)
 		c.JSON(http.StatusOK, channelJSON(ch))
 		return

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -76,6 +77,35 @@ func (r *Repository) UpdateModel(ctx context.Context, id int64, m *model.Model) 
 		"name", "provider_code", "display_name", "context_window", "max_output_tokens",
 		"capabilities", "billing_mode", "fallbacks", "status", "sort_order", "updated_at").
 		Where("id = ?", id).Updates(m)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// UpdateModelFields 部分更新模型（PATCH 语义：仅更新传入字段，未提供字段保持现值；
+// []string 字段自动序列化为 jsonb）。目标不存在 → ErrRecordNotFound。
+func (r *Repository) UpdateModelFields(ctx context.Context, id int64, fields map[string]any) error {
+	if len(fields) == 0 {
+		return errors.New("repository: 没有可更新的模型字段")
+	}
+	m := map[string]any{}
+	for k, v := range fields {
+		if arr, ok := v.([]string); ok {
+			b, err := json.Marshal(arr)
+			if err != nil {
+				return err
+			}
+			m[k] = json.RawMessage(b)
+		} else {
+			m[k] = v
+		}
+	}
+	m["updated_at"] = time.Now().UTC()
+	res := r.db.WithContext(ctx).Model(&model.Model{}).Where("id = ?", id).Updates(m)
 	if res.Error != nil {
 		return res.Error
 	}
