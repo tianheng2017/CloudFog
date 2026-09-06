@@ -32,8 +32,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// schemaVersion 本版本要求的迁移基线（migrations 文件名前缀 20260906000001）。
-const schemaVersion uint64 = 20260906000001
+// schemaVersion 本版本要求的迁移基线（migrations 文件名前缀 20260907000001：auth_sessions）。
+const schemaVersion uint64 = 20260907000001
 
 func main() {
 	os.Exit(run(os.Args[1:]))
@@ -159,6 +159,9 @@ func startRoles(role, configPath string) error {
 			MK: cfg.Security.MasterKey, MKID: cfg.Security.MasterKeyID,
 			MKPrev: cfg.Security.PreviousMasterKey, Log: log,
 		})
+		// b3-3：认证/自助（注册默认开启；config registration_enabled 落库前显式 true）
+		srv.MountPortal(&httpserver.Portal{Repo: repo, Salt: cfg.Security.APIKeySalt,
+			Log: log, RegistrationEnabled: true})
 		go func() {
 			if err := srv.Serve(); err != nil {
 				runErr <- fmt.Errorf("api 运行失败: %w", err)

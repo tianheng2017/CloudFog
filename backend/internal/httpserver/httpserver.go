@@ -92,3 +92,8 @@ func (s *Server) MountV1(a *API) {
 func (s *Server) MountAdmin(a *Admin) {
 	a.Register(s.eng)
 }
+
+// MountPortal 挂载认证与用户自助路由（07 §3：/api/v1/auth + /api/v1/me）。
+func (s *Server) MountPortal(p *Portal) {
+	p.Register(s.eng)
+}

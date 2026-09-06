@@ -36,8 +36,9 @@ type Principal struct {
 type Code string
 
 const (
-	CodeInvalidAPIKey Code = "invalid_api_key" // 未知/禁用/过期/user 或 group 不可用，统一 401
-	CodeIPNotAllowed  Code = "ip_not_allowed"  // 命中 key 但来源 IP 不在白名单，403
+	CodeInvalidAPIKey  Code = "invalid_api_key" // 未知/禁用/过期/user 或 group 不可用，统一 401
+	CodeIPNotAllowed   Code = "ip_not_allowed"  // 命中 key 但来源 IP 不在白名单，403
+	CodeSessionExpired Code = "session_expired" // 会话缺失/过期/无效（portal 自助 07 §3.0）
 )
 
 // Error 结构化鉴权错误（可被 errors.As 提取做中间件响应判定）。
