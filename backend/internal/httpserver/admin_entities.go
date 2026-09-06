@@ -300,6 +300,16 @@ func (r priceReq) build(modelID int64) (*model.ModelPrice, error) {
 	if p.Currency == "" {
 		p.Currency = "USD"
 	}
+	// 金额一律非负：负价会被 settle（balance - 负值）反向充值，构成充值套利（资金面缺陷，拒绝而非静默）。
+	if p.InputPricePer1K.IsNegative() || p.OutputPricePer1K.IsNegative() || p.PerRequestPrice.IsNegative() {
+		return nil, errors.New("input/output/per_request 价格不能为负")
+	}
+	if p.CacheReadPricePer1K != nil && p.CacheReadPricePer1K.IsNegative() {
+		return nil, errors.New("缓存读价格不能为负")
+	}
+	if p.CacheWritePricePer1K != nil && p.CacheWritePricePer1K.IsNegative() {
+		return nil, errors.New("缓存写价格不能为负")
+	}
 	return p, nil
 }
 

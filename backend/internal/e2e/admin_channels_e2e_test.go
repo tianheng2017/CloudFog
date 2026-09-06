@@ -393,4 +393,75 @@ func TestB3ChannelsAdmin(t *testing.T) {
 			t.Fatalf("重复删除应 404, got %d", d2.StatusCode)
 		}
 	})
+
+	t.Run("参数边界校验与覆盖补齐", func(t *testing.T) {
+		// 负倍率 / 非法并发 建渠道 → 400（负率曾会反转计费方向；concurrency 0 无法调度）
+		for _, c := range []map[string]any{
+			{"name": fmt.Sprintf("b3neg-%d", n), "provider_code": "openai", "rate_multiplier": "-1"},
+			{"name": fmt.Sprintf("b3ccu-%d", n), "provider_code": "openai", "concurrency": 0},
+		} {
+			r := call("sk-b3-adm", http.MethodPost, admPath("/channels"), c)
+			r.Body.Close()
+			if r.StatusCode != http.StatusBadRequest {
+				t.Fatalf("非法渠道参数应 400: %v got %d", c, r.StatusCode)
+			}
+		}
+		// 负价 → 400（负价 settle 曾反向充值余额）
+		np := call("sk-b3-adm", http.MethodPost, fmt.Sprintf("%s/model-prices?model_id=%d", admPath(""), m.ID),
+			map[string]any{"currency": "USD", "input_price_per_1k": "-1", "output_price_per_1k": "0.01",
+				"per_request_price": "0", "effective_from": "2026-08-01"})
+		np.Body.Close()
+		if np.StatusCode != http.StatusBadRequest {
+			t.Fatalf("负价应 400, got %d", np.StatusCode)
+		}
+		// 分组负倍率 → 400
+		gp := call("sk-b3-adm", http.MethodPatch, admPath(fmt.Sprintf("/groups/%d", ug.ID)),
+			map[string]string{"rate_multiplier": "-1"})
+		gp.Body.Close()
+		if gp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("分组负倍率应 400, got %d", gp.StatusCode)
+		}
+		// 无凭证渠道可建（空信封）→ circuit/reset（此前唯一未测端点）→ 删除闭环
+		ec := call("sk-b3-adm", http.MethodPost, admPath("/channels"),
+			map[string]any{"name": fmt.Sprintf("b3edge-%d", n), "provider_code": "openai", "schedulable": false})
+		eraw, _ := io.ReadAll(ec.Body)
+		ec.Body.Close()
+		if ec.StatusCode != http.StatusOK {
+			t.Fatalf("建无凭证渠道 = %d %s", ec.StatusCode, eraw)
+		}
+		var ech struct {
+			ID int64 `json:"id"`
+		}
+		if err := json.Unmarshal(eraw, &ech); err != nil || ech.ID == 0 {
+			t.Fatalf("parse channel: %s", eraw)
+		}
+		rc := call("sk-b3-adm", http.MethodPost, admPath(fmt.Sprintf("/channels/%d/circuit/reset", ech.ID)), nil)
+		rc.Body.Close()
+		if rc.StatusCode != http.StatusOK {
+			t.Fatalf("circuit reset = %d", rc.StatusCode)
+		}
+		rc404 := call("sk-b3-adm", http.MethodPost, admPath("/channels/99999999/circuit/reset"), nil)
+		rc404.Body.Close()
+		if rc404.StatusCode != http.StatusNotFound {
+			t.Fatalf("不存在渠道 circuit reset 应 404, got %d", rc404.StatusCode)
+		}
+		dl2 := call("sk-b3-adm", http.MethodDelete, admPath(fmt.Sprintf("/channels/%d", ech.ID)), nil)
+		dl2.Body.Close()
+		if dl2.StatusCode != http.StatusNoContent {
+			t.Fatalf("清理临时渠道 = %d", dl2.StatusCode)
+		}
+		// 读侧列表：providers 含 openai；prices 按 model_id 含种子价
+		pl := call("sk-b3-adm", http.MethodGet, admPath("/providers"), nil)
+		praw, _ := io.ReadAll(pl.Body)
+		pl.Body.Close()
+		if pl.StatusCode != http.StatusOK || !strings.Contains(string(praw), `"code":"openai"`) {
+			t.Fatalf("providers 列表应含 openai: %d %s", pl.StatusCode, praw)
+		}
+		pql := call("sk-b3-adm", http.MethodGet, admPath(fmt.Sprintf("/model-prices?model_id=%d", m.ID)), nil)
+		pqraw, _ := io.ReadAll(pql.Body)
+		pql.Body.Close()
+		if pql.StatusCode != http.StatusOK || !strings.Contains(string(pqraw), "0.01") {
+			t.Fatalf("prices 列表应含种子价: %d %s", pql.StatusCode, pqraw)
+		}
+	})
 }

@@ -42,6 +42,9 @@ func (r channelReq) toPatch() (repository.ChannelPatch, error) {
 		if err != nil {
 			return p, err
 		}
+		if d.IsNegative() {
+			return p, errors.New("rate_multiplier 不能为负（负倍率会反转计费方向）")
+		}
 		s := d.String()
 		p.RateMultiplier = &s
 	}
@@ -50,10 +53,31 @@ func (r channelReq) toPatch() (repository.ChannelPatch, error) {
 		if err != nil {
 			return p, err
 		}
+		if d.IsNegative() {
+			return p, errors.New("token_ratio 不能为负（负系数会反转 token 计量）")
+		}
 		s := d.String()
 		p.TokenRatio = &s
 	}
+	if err := validateChannelNums(r.Priority, r.Weight, r.Concurrency); err != nil {
+		return p, err
+	}
 	return p, nil
+}
+
+// validateChannelNums 数值字段合理性：priority/weight/concurrency 均不允许负值；
+// concurrency < 1 无法调度（路由按 >0 判断可用），一并拒绝。
+func validateChannelNums(priority, weight, concurrency *int) error {
+	if priority != nil && *priority < 0 {
+		return errors.New("priority 不能为负")
+	}
+	if weight != nil && *weight < 0 {
+		return errors.New("weight 不能为负")
+	}
+	if concurrency != nil && *concurrency < 1 {
+		return errors.New("concurrency 至少为 1")
+	}
+	return nil
 }
 
 // channelJSON 脱敏输出：credentials 明文/密文一律不出（仅给 encrypted 标志 + key_id），08 §4.2/§10。
@@ -163,6 +187,10 @@ func (a *Admin) handleChannelCreate(c *gin.Context) {
 	}
 	// 默认态必须可立即参与调度：active+schedulable+rate1+token1+priority50。
 	// （DB 列默认值在 GORM struct 插入零值时不会生效，漏设会产生 status='' 永不调度 / rate=0 白送流量）
+	if err := validateChannelNums(req.Priority, req.Weight, req.Concurrency); err != nil {
+		writeAdminError(c, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
 	ch := &model.Channel{Name: *req.Name, ProviderID: prov.ID, ProviderCode: prov.Code,
 		BaseURL: req.BaseURL, AuthType: req.AuthType, // 覆盖 provider 默认端点/鉴权
 		Status: "active", Schedulable: true, Priority: 50, Weight: 100, Concurrency: 3,
@@ -184,12 +212,20 @@ func (a *Admin) handleChannelCreate(c *gin.Context) {
 			writeAdminError(c, http.StatusBadRequest, "invalid_request", "rate_multiplier 须为合法十进制")
 			return
 		}
+		if d.IsNegative() {
+			writeAdminError(c, http.StatusBadRequest, "invalid_request", "rate_multiplier 不能为负（负倍率会反转计费方向）")
+			return
+		}
 		ch.RateMultiplier = model.Decimal{Decimal: d}
 	}
 	if req.TokenRatio != nil {
 		d, err := decimal.NewFromString(*req.TokenRatio)
 		if err != nil {
 			writeAdminError(c, http.StatusBadRequest, "invalid_request", "token_ratio 须为合法十进制")
+			return
+		}
+		if d.IsNegative() {
+			writeAdminError(c, http.StatusBadRequest, "invalid_request", "token_ratio 不能为负（负系数会反转 token 计量）")
 			return
 		}
 		ch.TokenRatio = model.Decimal{Decimal: d}

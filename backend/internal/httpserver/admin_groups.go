@@ -36,12 +36,18 @@ func (r groupReq) toPatch() (repository.GroupPatch, error) {
 		if err != nil {
 			return p, err
 		}
+		if d.IsNegative() {
+			return p, errors.New("rate_multiplier 不能为负（负倍率会反转计费方向）")
+		}
 		p.RateMultiplier = &d
 	}
 	if r.DailyQuotaUSD != nil {
 		d, err := decimal.NewFromString(*r.DailyQuotaUSD)
 		if err != nil {
 			return p, err
+		}
+		if d.IsNegative() {
+			return p, errors.New("daily_quota_usd 不能为负")
 		}
 		p.DailyQuotaUSD = &d
 	}
