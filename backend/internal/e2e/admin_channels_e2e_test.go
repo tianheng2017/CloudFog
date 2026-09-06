@@ -325,8 +325,72 @@ func TestB3ChannelsAdmin(t *testing.T) {
 		if p2.StatusCode != http.StatusConflict {
 			t.Fatalf("重复生效日应 409, got %d", p2.StatusCode)
 		}
-		// 清理
-		_ = db.Exec("DELETE FROM model_prices WHERE model_id = ?", created.ID).Error
-		call("sk-b3-adm", http.MethodDelete, admPath(fmt.Sprintf("/models/%d", created.ID)), nil).Body.Close()
+		// 价格删除 → 204；模型删除 → 204；列表不再含（此前清理未断言状态码）
+		dp := call("sk-b3-adm", http.MethodDelete, admPath(fmt.Sprintf("/model-prices/%d", pcreated.ID)), nil)
+		dp.Body.Close()
+		if dp.StatusCode != http.StatusNoContent {
+			t.Fatalf("delete price = %d", dp.StatusCode)
+		}
+		dm := call("sk-b3-adm", http.MethodDelete, admPath(fmt.Sprintf("/models/%d", created.ID)), nil)
+		dm.Body.Close()
+		if dm.StatusCode != http.StatusNoContent {
+			t.Fatalf("delete model = %d", dm.StatusCode)
+		}
+		ml := call("sk-b3-adm", http.MethodGet, admPath(fmt.Sprintf("/models?name=%s", mName)), nil)
+		mlraw, _ := io.ReadAll(ml.Body)
+		ml.Body.Close()
+		if strings.Contains(string(mlraw), mName) {
+			t.Fatalf("删除后模型不应在列表: %s", mlraw)
+		}
+	})
+
+	t.Run("模型映射与删除闭环", func(t *testing.T) {
+		alias := fmt.Sprintf("b3alias-%d", n)
+		upstream := "gpt-4o"
+		c1 := call("sk-b3-adm", http.MethodPost, admPath("/model-mappings"),
+			map[string]any{"alias": alias, "upstream_model": upstream, "priority": 10})
+		raw1, _ := io.ReadAll(c1.Body)
+		c1.Body.Close()
+		if c1.StatusCode != http.StatusOK {
+			t.Fatalf("create mapping = %d %s", c1.StatusCode, raw1)
+		}
+		var mid struct {
+			ID int64 `json:"id"`
+		}
+		if err := json.Unmarshal(raw1, &mid); err != nil || mid.ID == 0 {
+			t.Fatalf("parse mapping: %s", raw1)
+		}
+		// 精确重复 → 409（曾允许重复行致路由静默取首条）
+		c2 := call("sk-b3-adm", http.MethodPost, admPath("/model-mappings"),
+			map[string]any{"alias": alias, "upstream_model": upstream, "priority": 5})
+		c2.Body.Close()
+		if c2.StatusCode != http.StatusConflict {
+			t.Fatalf("重复映射应 409, got %d", c2.StatusCode)
+		}
+		// 渠道级映射指向不存在渠道 → 404（FK 违例映射）
+		ck := call("sk-b3-adm", http.MethodPost, admPath("/model-mappings"),
+			map[string]any{"alias": alias + "-c", "upstream_model": upstream, "channel_id": 99999999})
+		ck.Body.Close()
+		if ck.StatusCode != http.StatusNotFound {
+			t.Fatalf("不存在渠道应 404, got %d", ck.StatusCode)
+		}
+		// 列表按 alias 过滤
+		lq := call("sk-b3-adm", http.MethodGet, admPath(fmt.Sprintf("/model-mappings?alias=%s", alias)), nil)
+		lraw, _ := io.ReadAll(lq.Body)
+		lq.Body.Close()
+		if !strings.Contains(string(lraw), upstream) || strings.Contains(string(lraw), "-c") {
+			t.Fatalf("列表应只含匹配 alias 的映射: %s", lraw)
+		}
+		// 删除 → 204 → 再删 404
+		dd := call("sk-b3-adm", http.MethodDelete, admPath(fmt.Sprintf("/model-mappings/%d", mid.ID)), nil)
+		dd.Body.Close()
+		if dd.StatusCode != http.StatusNoContent {
+			t.Fatalf("delete mapping = %d", dd.StatusCode)
+		}
+		d2 := call("sk-b3-adm", http.MethodDelete, admPath(fmt.Sprintf("/model-mappings/%d", mid.ID)), nil)
+		d2.Body.Close()
+		if d2.StatusCode != http.StatusNotFound {
+			t.Fatalf("重复删除应 404, got %d", d2.StatusCode)
+		}
 	})
 }

@@ -478,8 +478,25 @@ func (a *Admin) handleMappingCreate(c *gin.Context) {
 		writeAdminError(c, http.StatusBadRequest, "invalid_request", "alias/upstream_model 必填")
 		return
 	}
+	ctx := c.Request.Context()
+	// 精确重复拒绝：重复行会导致路由"取首条"的静默歧义（曾依赖运维人工列表去重）。
+	exists, err := a.Repo.ModelMappingExists(ctx, req.Alias, req.UpstreamModel, req.ChannelID)
+	if err != nil {
+		a.log().Error("admin mapping dup check", "error", err)
+		writeAdminError(c, http.StatusInternalServerError, "server_error", "查询失败")
+		return
+	}
+	if exists {
+		writeAdminError(c, http.StatusConflict, "conflict", "该 alias→上游模型 映射已存在")
+		return
+	}
 	m := &model.ModelMapping{ChannelID: req.ChannelID, Alias: req.Alias, UpstreamModel: req.UpstreamModel, Priority: req.Priority}
 	if err := a.Repo.CreateModelMapping(c.Request.Context(), m); err != nil {
+		if repository.IsForeignKeyViolation(err) {
+			writeAdminError(c, http.StatusNotFound, "not_found", "渠道不存在")
+			return
+		}
+		a.log().Error("admin mapping create", "error", err)
 		writeAdminError(c, http.StatusInternalServerError, "server_error", "创建失败")
 		return
 	}

@@ -141,7 +141,24 @@ func (r *Repository) ListModelMappings(ctx context.Context, alias string) ([]mod
 	return ms, nil
 }
 
-// CreateModelMapping 新增映射（无组合唯一约束；运维经列表去重，重复全局映射解析取首条）。
+// ModelMappingExists 精确重复判定：同 alias+upstream+渠道 已存在。
+// channel_id 语义：nil 表示全局映射（判 channel_id IS NULL），与任意渠道级映射不冲突（各自 failover 场景）。
+func (r *Repository) ModelMappingExists(ctx context.Context, alias, upstream string, channelID *int64) (bool, error) {
+	var cnt int64
+	q := r.db.WithContext(ctx).Model(&model.ModelMapping{}).Where("alias = ? AND upstream_model = ?", alias, upstream)
+	if channelID == nil {
+		q = q.Where("channel_id IS NULL")
+	} else {
+		q = q.Where("channel_id = ?", *channelID)
+	}
+	if err := q.Count(&cnt).Error; err != nil {
+		return false, err
+	}
+	return cnt > 0, nil
+}
+
+// CreateModelMapping 新增映射（无组合唯一约束；上层 handler 已做精确重复 409 判定，
+// 避免重复行导致"全局解析取首条"的静默歧义）。
 func (r *Repository) CreateModelMapping(ctx context.Context, m *model.ModelMapping) error {
 	return r.db.WithContext(ctx).Create(m).Error
 }
