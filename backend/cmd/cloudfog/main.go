@@ -145,7 +145,8 @@ func startRoles(role, configPath string) error {
 	if roles["api"] {
 		srv = httpserver.New(cfg.Server.Addr, db, log)
 		// b2-5/6：v1 业务路由装配（鉴权 + 网关编排 + Redis 预扣 + 结算投递）
-		gw := &gateway.Gateway{Cat: repo, Bal: repo, List: repo, Res: reserve}
+		gw := &gateway.Gateway{Cat: repo, Bal: repo, List: repo, Res: reserve,
+			CredMK: cfg.Security.MasterKey, CredMKPrev: cfg.Security.PreviousMasterKey}
 		if enq, err := schedulerEnqueuer(ctx, cfg); err == nil {
 			gw.Prod = &billing.Producer{Enq: enq}
 		} else {
@@ -155,7 +156,8 @@ func startRoles(role, configPath string) error {
 		// b3-1：管理端接口（角色鉴权在 /api/v1/admin 组内强制校验；MK 供渠道凭证信封加密，b3-2 起用）
 		srv.MountAdmin(&httpserver.Admin{
 			Repo: repo, Store: repo, Salt: cfg.Security.APIKeySalt,
-			MK: cfg.Security.MasterKey, MKPrev: cfg.Security.PreviousMasterKey, Log: log,
+			MK: cfg.Security.MasterKey, MKID: cfg.Security.MasterKeyID,
+			MKPrev: cfg.Security.PreviousMasterKey, Log: log,
 		})
 		go func() {
 			if err := srv.Serve(); err != nil {

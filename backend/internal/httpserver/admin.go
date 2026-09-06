@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 
 	"cloudfog/internal/auth"
 	"cloudfog/internal/model"
+	"cloudfog/internal/pkg/crypto"
 	"cloudfog/internal/repository"
 )
 
@@ -36,7 +38,20 @@ type Admin struct {
 	Salt   string
 	Log    *slog.Logger
 	MK     string // 凭证信封主密钥（security.master_key）
+	MKID   string // 主密钥标识（security.master_key_id，写入信封 key_id）
 	MKPrev string // 轮换期上一代（可空）
+}
+
+// sealChannelCreds 渠道凭证密封（AAD=channel:<id>；明文仅内存）。
+func (a *Admin) sealChannelCreds(channelID int64, plain map[string]any) (map[string]any, error) {
+	if a.MK == "" {
+		return nil, errors.New("凭证主密钥未配置（security.master_key），拒绝明文落库")
+	}
+	keyID := a.MKID
+	if keyID == "" {
+		keyID = "k_default"
+	}
+	return crypto.Seal(plain, a.MK, keyID, fmt.Sprintf("channel:%d", channelID))
 }
 
 func (a *Admin) log() *slog.Logger {
@@ -65,6 +80,31 @@ func (a *Admin) Register(eng *gin.Engine) {
 	g.GET("/groups/:id", a.handleGroupGet)
 	g.PATCH("/groups/:id", a.handleGroupPatch)
 	g.DELETE("/groups/:id", a.handleGroupDelete)
+	// 供应商 / 渠道 / 模型 / 定价 / 映射（b3-2，07 §4.2）
+	g.GET("/providers", a.handleProvidersList)
+	g.POST("/providers", a.handleProviderUpsert)
+	g.GET("/channels", a.handleChannelsList)
+	g.POST("/channels", a.handleChannelCreate)
+	g.GET("/channels/:id", a.handleChannelGet)
+	g.PATCH("/channels/:id", a.handleChannelPatch)
+	g.DELETE("/channels/:id", a.handleChannelDelete)
+	g.POST("/channels/:id/enable", a.handleChannelEnable)
+	g.POST("/channels/:id/disable", a.handleChannelDisable)
+	g.POST("/channels/:id/circuit/reset", a.handleChannelCircuitReset)
+	g.POST("/channels/:id/test", a.handleChannelTest)
+	g.GET("/channels/:id/groups", a.handleChannelGroupsGet)
+	g.PUT("/channels/:id/groups", a.handleChannelGroupsPut)
+	g.GET("/models", a.handleModelsList)
+	g.POST("/models", a.handleModelCreate)
+	g.PATCH("/models/:id", a.handleModelPatch)
+	g.DELETE("/models/:id", a.handleModelDelete)
+	g.GET("/model-prices", a.handlePricesList)
+	g.POST("/model-prices", a.handlePriceCreate)
+	g.PATCH("/model-prices/:id", a.handlePricePatch)
+	g.DELETE("/model-prices/:id", a.handlePriceDelete)
+	g.GET("/model-mappings", a.handleMappingsList)
+	g.POST("/model-mappings", a.handleMappingCreate)
+	g.DELETE("/model-mappings/:id", a.handleMappingDelete)
 }
 
 // RequireAdmin 角色强制校验（08 §5.2/§5.3：前端权限仅为体验优化）。
@@ -536,4 +576,8 @@ func parseID(s string, out *int64) error {
 	}
 	*out = v
 	return nil
+}
+
+func parseID64(s string) (int64, error) {
+	return strconv.ParseInt(s, 10, 64)
 }

@@ -19,6 +19,7 @@ import (
 	"cloudfog/internal/ir"
 	"cloudfog/internal/model"
 	"cloudfog/internal/pkg/adapter"
+	"cloudfog/internal/pkg/crypto"
 	"cloudfog/internal/router"
 )
 
@@ -63,6 +64,10 @@ type Gateway struct {
 		Reset(ctx context.Context, userID int64, requestID string) error
 	}
 	Prod *billing.Producer
+	// 凭证信封主密钥（08 §2，security.master_key/previous_master_key）：渠道凭证为密封形态时
+	// 转发前解密；空 = 不支持密封凭证（仅 legacy 明文渠道可用，缺失时明确报错而非静默空凭据）。
+	CredMK     string
+	CredMKPrev string
 }
 
 // Models 目录中全部可用模型（供 /v1/models）。
@@ -250,30 +255,46 @@ func providerFor(at *router.Attempt) (adapter.Provider, error) {
 }
 
 // buildRuntime 装配渠道运行时（04 §1：凭证已解密入参）。
-// 说明：MVP 阶段直接读取 channel.credentials.api_key（dev/测试用明文）；生产信封解密随凭证管理模块接入（08 §2）。
-func buildRuntime(at *router.Attempt) adapter.Runtime {
+// 信封凭证（08 §2）经主密钥解密（AAD=channel:<id> 防密文跨渠道移植）；legacy 明文透传。
+// 解密失败返回明确错误（不静默空凭据发起上游请求），由编排层按渠道错误切换。
+func (g *Gateway) buildRuntime(at *router.Attempt) (adapter.Runtime, error) {
 	c, prov := at.Candidate.Channel, at.Candidate.Provider
 	base := prov.BaseURL
 	if c.BaseURL != nil && *c.BaseURL != "" {
 		base = *c.BaseURL
 	}
+	cred := c.Credentials
+	if crypto.IsSealed(cred) {
+		if g == nil || g.CredMK == "" {
+			return adapter.Runtime{}, fmt.Errorf("gateway: 渠道 %d 凭证为信封密文但服务未配置主密钥", c.ID)
+		}
+		out, err := crypto.Open(cred, g.CredMK, g.CredMKPrev, fmt.Sprintf("channel:%d", c.ID))
+		if err != nil {
+			return adapter.Runtime{}, fmt.Errorf("gateway: 渠道 %d 凭证解密失败（主密钥缺失/轮换/AAD 不符）: %w", c.ID, err)
+		}
+		cred = out
+	}
 	bearer := ""
-	if v, ok := c.Credentials["api_key"].(string); ok {
+	if v, ok := cred["api_key"].(string); ok {
 		bearer = v
 	}
-	return adapter.Runtime{ID: c.ID, ProviderCode: prov.Code, BaseURL: base, Bearer: bearer}
+	return adapter.Runtime{ID: c.ID, ProviderCode: prov.Code, BaseURL: base, Bearer: bearer}, nil
 }
 
 // newUpstreamRequest 构造上游请求。
-func newUpstreamRequest(ctx context.Context, at *router.Attempt, req *ir.CanonicalRequest, requestID string) (*http.Request, error) {
+func (g *Gateway) newUpstreamRequest(ctx context.Context, at *router.Attempt, req *ir.CanonicalRequest, requestID string) (*http.Request, error) {
 	p, err := providerFor(at)
+	if err != nil {
+		return nil, err
+	}
+	rt, err := g.buildRuntime(at)
 	if err != nil {
 		return nil, err
 	}
 	return p.EncodeRequest(ctx, adapter.EncodeInput{
 		Request:       req,
 		UpstreamModel: at.UpstreamModel,
-		Runtime:       buildRuntime(at),
+		Runtime:       rt,
 		RequestID:     requestID,
 	})
 }
@@ -284,7 +305,7 @@ func (g *Gateway) tryOnce(ctx context.Context, at *router.Attempt, req *ir.Canon
 	if err != nil {
 		return nil, false, err
 	}
-	httpReq, err := newUpstreamRequest(ctx, at, req, "")
+	httpReq, err := g.newUpstreamRequest(ctx, at, req, "")
 	if err != nil {
 		return nil, true, err // 编码失败可尝试其他渠道
 	}
@@ -318,7 +339,7 @@ func (g *Gateway) tryStream(ctx context.Context, at *router.Attempt, req *ir.Can
 	if err != nil {
 		return nil, nil, err
 	}
-	httpReq, err := newUpstreamRequest(ctx, at, req, "")
+	httpReq, err := g.newUpstreamRequest(ctx, at, req, "")
 	if err != nil {
 		return nil, nil, err
 	}

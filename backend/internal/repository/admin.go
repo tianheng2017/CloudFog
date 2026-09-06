@@ -85,7 +85,8 @@ func (p UserProfilePatch) Apply() (map[string]any, error) {
 	}
 	if p.Phone != nil {
 		if strings.TrimSpace(*p.Phone) == "" {
-			m["phone"] = nil
+			// GORM map 更新会跳过值为 nil 的键 → 必须用 Expr 显式置 NULL，否则"清空电话"静默失效
+			m["phone"] = gorm.Expr("NULL")
 		} else {
 			m["phone"] = *p.Phone
 		}
