@@ -19,7 +19,9 @@ func (Decimal) GormDBDataType(*gorm.DB, *schema.Field) string {
 }
 
 func (d Decimal) Value() (driver.Value, error) {
-	return d.Decimal, nil
+	// 必须返回 driver 基本类型字符串，而非内嵌 decimal.Decimal 结构体：
+	// 返回结构体会让 pgx 对零值误判（曾实测零值被编码成 bool true，insert 报错）。
+	return d.String(), nil
 }
 
 func (d *Decimal) Scan(v any) error {

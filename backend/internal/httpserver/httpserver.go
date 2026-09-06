@@ -18,6 +18,7 @@ import (
 // Server 包装 gin Engine + http.Server。
 type Server struct {
 	srv *http.Server
+	eng *gin.Engine
 	db  *gorm.DB // nil 时 /readyz 跳过 DB 检查（测试便利；生产必配）
 	log *slog.Logger
 }
@@ -26,9 +27,14 @@ type Server struct {
 func New(addr string, db *gorm.DB, log *slog.Logger) *Server {
 	gin.SetMode(gin.ReleaseMode)
 	eng := gin.New()
+	// 安全（08 §3.2）：IP 白名单以 ClientIP 判定——默认不信任任何代理，令
+	// ClientIP=RemoteAddr，杜绝伪造 X-Forwarded-For 绕过白名单。
+	// 部署在 LB/反代之后时，由部署层显式配置受信代理 CIDR（SetTrustedProxies）。
+	_ = eng.SetTrustedProxies(nil)
 	eng.Use(gin.Recovery())
 
 	s := &Server{db: db, log: log}
+	s.eng = eng
 
 	// 09 §7：/healthz 存活（无依赖）；/readyz 就绪（PG 连通，强依赖）。
 	eng.GET("/healthz", func(c *gin.Context) {
@@ -75,4 +81,9 @@ func (s *Server) Serve() error {
 // Shutdown 优雅关闭（ctx 控制上限，config.Server.ShutdownTimeout）。
 func (s *Server) Shutdown(ctx context.Context) error {
 	return s.srv.Shutdown(ctx)
+}
+
+// MountV1 挂载 v1 业务路由（cmd wiring 组装 API 后调用；healthz/readyz 不受影响）。
+func (s *Server) MountV1(a *API) {
+	a.Register(s.eng)
 }

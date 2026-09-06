@@ -54,10 +54,17 @@ jobs:
         options: >-
           --health-cmd "rabbitmq-diagnostics -q ping"
           --health-interval 10s --health-timeout 10s --health-retries 15
+      redis:
+        image: redis:8.10-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s --health-timeout 5s --health-retries 10
 
     env:
       CLOUDFOG_DSN: postgres://cloudfog:cloudfog@127.0.0.1:5432/cloudfog?sslmode=disable
       CLOUDFOG_RABBITMQ_URL: amqp://cloudfog:cloudfog@127.0.0.1:5672/cloudfog
+      CLOUDFOG_REDIS_ADDR: 127.0.0.1:6379
 
     steps:
       - uses: actions/checkout@v4
@@ -82,8 +89,9 @@ jobs:
           cd backend
           go run ./cmd/cloudfog bootstrap
           go run ./cmd/cloudfog bootstrap
-      - name: 异步层 E2E（真实 RabbitMQ：投递/延迟回投/重试→DLQ）
-        run: cd backend && go test -tags=integration -count=1 ./...
+      - name: 异步层 E2E（真实 RabbitMQ：投递/延迟回投/重试→DLQ / B2 结算全链路）
+        # -p 1 串行：多 integration 包共享同一 Rabbit vhost，并行会跨包抢消费任务（B2-7 实测）
+        run: cd backend && go test -tags=integration -count=1 -p 1 ./...
 
   security:
     runs-on: ubuntu-latest

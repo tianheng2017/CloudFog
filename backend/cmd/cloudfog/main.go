@@ -17,13 +17,18 @@ import (
 	"syscall"
 	"time"
 
+	"cloudfog/internal/billing"
 	"cloudfog/internal/bootstrap"
 	"cloudfog/internal/config"
+	"cloudfog/internal/gateway"
 	"cloudfog/internal/httpserver"
 	"cloudfog/internal/migrate"
 	"cloudfog/internal/model"
 	"cloudfog/internal/pkg/logger"
+	"cloudfog/internal/repository"
 	"cloudfog/internal/task"
+
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
@@ -103,6 +108,15 @@ func startRoles(role, configPath string) error {
 		return fmt.Errorf("启动失败: %w", err)
 	}
 
+	// 业务装配：repository + Redis（预扣缓存）+ billing 引擎 handler 注册（b2-6）
+	repo := repository.New(db)
+	rds := redis.NewClient(&redis.Options{Addr: cfg.Redis.Addr, Password: cfg.Redis.Password, DB: 0})
+	defer func() { _ = rds.Close() }()
+	reserve := billing.NewReserve(rds, repo)
+	if err := (&billing.Engine{Repo: repo, Cache: reserve}).Register(); err != nil {
+		return fmt.Errorf("启动失败: 注册结算 handler 失败: %w", err)
+	}
+
 	// dev 单进程（--role=all）自动引导（超管 + 内置种子，幂等）；生产用独立 bootstrap 子命令
 	if role == "all" {
 		bctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -130,6 +144,14 @@ func startRoles(role, configPath string) error {
 	var srv *httpserver.Server
 	if roles["api"] {
 		srv = httpserver.New(cfg.Server.Addr, db, log)
+		// b2-5/6：v1 业务路由装配（鉴权 + 网关编排 + Redis 预扣 + 结算投递）
+		gw := &gateway.Gateway{Cat: repo, Bal: repo, List: repo, Res: reserve}
+		if enq, err := schedulerEnqueuer(ctx, cfg); err == nil {
+			gw.Prod = &billing.Producer{Enq: enq}
+		} else {
+			log.Warn("结算投递器不可用（broker 未就绪），本次启动不投递计量任务", "error", err)
+		}
+		srv.MountV1(&httpserver.API{Store: repo, Salt: cfg.Security.APIKeySalt, Gw: gw, Log: log})
 		go func() {
 			if err := srv.Serve(); err != nil {
 				runErr <- fmt.Errorf("api 运行失败: %w", err)
