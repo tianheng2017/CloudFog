@@ -152,6 +152,11 @@ func startRoles(role, configPath string) error {
 			log.Warn("结算投递器不可用（broker 未就绪），本次启动不投递计量任务", "error", err)
 		}
 		srv.MountV1(&httpserver.API{Store: repo, Salt: cfg.Security.APIKeySalt, Gw: gw, Log: log})
+		// b3-1：管理端接口（角色鉴权在 /api/v1/admin 组内强制校验；MK 供渠道凭证信封加密，b3-2 起用）
+		srv.MountAdmin(&httpserver.Admin{
+			Repo: repo, Store: repo, Salt: cfg.Security.APIKeySalt,
+			MK: cfg.Security.MasterKey, MKPrev: cfg.Security.PreviousMasterKey, Log: log,
+		})
 		go func() {
 			if err := srv.Serve(); err != nil {
 				runErr <- fmt.Errorf("api 运行失败: %w", err)

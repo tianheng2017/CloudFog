@@ -87,3 +87,8 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) MountV1(a *API) {
 	a.Register(s.eng)
 }
+
+// MountAdmin 挂载管理端路由（07 §4：/api/v1/admin，独立鉴权链）。
+func (s *Server) MountAdmin(a *Admin) {
+	a.Register(s.eng)
+}
