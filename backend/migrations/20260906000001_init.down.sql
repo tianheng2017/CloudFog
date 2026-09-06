@@ -1,0 +1,28 @@
+-- 0001_init（down）：逆序删除全部对象。
+-- 分区子表随父表 DROP TABLE CASCADE 一并删除（无需逐一 drop）。
+
+DROP TRIGGER IF EXISTS trg_usage_logs_no_write ON usage_logs;
+DROP FUNCTION IF EXISTS usage_logs_guard();
+
+DROP TABLE IF EXISTS settings CASCADE;
+DROP TABLE IF EXISTS audit_logs CASCADE;
+DROP TABLE IF EXISTS idempotency_records CASCADE;
+DROP TABLE IF EXISTS payment_orders CASCADE;
+DROP TABLE IF EXISTS payment_providers CASCADE;
+DROP TABLE IF EXISTS subscriptions CASCADE;
+DROP TABLE IF EXISTS subscription_plans CASCADE;
+DROP TABLE IF EXISTS billing_ledger CASCADE;
+DROP TABLE IF EXISTS usage_daily_stats CASCADE;
+DROP TABLE IF EXISTS usage_logs CASCADE;          -- 含全部月分区
+DROP TABLE IF EXISTS model_mappings CASCADE;
+DROP TABLE IF EXISTS model_prices CASCADE;
+DROP TABLE IF EXISTS models CASCADE;
+DROP TABLE IF EXISTS proxies CASCADE;
+DROP TABLE IF EXISTS channel_groups CASCADE;
+DROP TABLE IF EXISTS channels CASCADE;
+DROP TABLE IF EXISTS providers CASCADE;
+DROP TABLE IF EXISTS user_allowed_groups CASCADE;
+DROP TABLE IF EXISTS groups CASCADE;
+DROP TABLE IF EXISTS api_keys CASCADE;
+DROP TABLE IF EXISTS user_balances CASCADE;
+DROP TABLE IF EXISTS users CASCADE;

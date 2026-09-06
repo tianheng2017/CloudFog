@@ -1,0 +1,66 @@
+# 云之雾本地开发存储（10 §1.3）。凭据与卷均以 cloudfog 前缀命名，与其他项目隔离。
+# 镜像版本与生产一致（10 §3.5 容器基线），禁止版本漂移。
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: cloudfog-postgres
+    environment:
+      POSTGRES_DB: cloudfog
+      POSTGRES_USER: cloudfog
+      POSTGRES_PASSWORD: cloudfog
+    ports:
+      - "5432:5432"
+    # PG18+ 镜像约定：挂载父目录 /var/lib/postgresql（数据落在其下 18/docker 子目录），
+    # 支持 pg_upgrade --link；挂旧路径 /var/lib/postgresql/data 会被判定为 unused 而拒绝启动
+    volumes:
+      - cloudfog-dev_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cloudfog -d cloudfog"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.10-alpine
+    container_name: cloudfog-redis
+    # noeviction：限流计数与分布式锁不允许被 LRU 淘汰（10 §2）
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - cloudfog-dev_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:4.2-management
+    container_name: cloudfog-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: cloudfog
+      RABBITMQ_DEFAULT_PASS: cloudfog
+      RABBITMQ_DEFAULT_VHOST: cloudfog
+    ports:
+      - "5672:5672"     # AMQP 0-9-1
+      - "15672:15672"   # Management UI
+      - "15692:15692"   # Prometheus 指标
+    volumes:
+      - cloudfog-dev_rabbitmqdata:/var/lib/rabbitmq
+      - ./rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  cloudfog-dev_pgdata:
+  cloudfog-dev_redisdata:
+  cloudfog-dev_rabbitmqdata:

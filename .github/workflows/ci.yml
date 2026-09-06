@@ -1,0 +1,115 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+# B1 门禁：gofmt / golangci-lint / vet / 单元(含 race) / 迁移幂等 / 异步层 E2E（真实 RabbitMQ）/ build / 安全
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: gofmt
+        run: |
+          cd backend
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "未格式化文件:"; echo "$out"; exit 1; fi
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: backend
+      - name: go vet
+        run: cd backend && go vet ./...
+
+  test:
+    runs-on: ubuntu-latest
+    # 真实 PG18 + RabbitMQ 4.2（与生产同镜像 tag，杜绝漂移，12 §4）
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: cloudfog
+          POSTGRES_USER: cloudfog
+          POSTGRES_PASSWORD: cloudfog
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U cloudfog -d cloudfog"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+      rabbitmq:
+        image: rabbitmq:4.2-management
+        env:
+          RABBITMQ_DEFAULT_USER: cloudfog
+          RABBITMQ_DEFAULT_PASS: cloudfog
+          RABBITMQ_DEFAULT_VHOST: cloudfog
+        ports: ["5672:5672"]
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s --health-timeout 10s --health-retries 15
+
+    env:
+      CLOUDFOG_DSN: postgres://cloudfog:cloudfog@127.0.0.1:5432/cloudfog?sslmode=disable
+      CLOUDFOG_RABBITMQ_URL: amqp://cloudfog:cloudfog@127.0.0.1:5672/cloudfog
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: 单元测试（含 race，无 tag=默认文件）
+        run: cd backend && go test -count=1 -race ./...
+      - name: 迁移幂等门禁（up → down 1 → up，12 §5.1）
+        run: |
+          cd backend
+          go run ./cmd/cloudfog migrate up
+          go run ./cmd/cloudfog migrate status
+          go run ./cmd/cloudfog migrate down 1
+          go run ./cmd/cloudfog migrate up
+      - name: 引导幂等（bootstrap 两次）
+        env:
+          CLOUDFOG_ADMIN_EMAIL: admin@ci.cloudfog.local
+          CLOUDFOG_ADMIN_PASSWORD: Admin12345!
+        run: |
+          cd backend
+          go run ./cmd/cloudfog bootstrap
+          go run ./cmd/cloudfog bootstrap
+      - name: 异步层 E2E（真实 RabbitMQ：投递/延迟回投/重试→DLQ）
+        run: cd backend && go test -tags=integration -count=1 ./...
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: gitleaks
+        uses: gacts/gitleaks@v1
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          cd backend && govulncheck ./...
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: build（静态二进制）
+        run: cd backend && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/cloudfog ./cmd/cloudfog
+      - name: upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudfog-linux-amd64
+          path: backend/bin/cloudfog

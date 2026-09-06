@@ -1,0 +1,29 @@
+# 环境变量与密钥（gitleaks + 10 §3.1 铁律：敏感配置绝不入库）
+.env
+*.env
+!*.env.example
+
+# Go
+backend/bin/
+backend/vendor/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Node / Nuxt（B4）
+frontend/node_modules/
+frontend/.output/
+frontend/.nuxt/
+frontend/dist/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# 日志与临时文件
+*.log
+tmp/
