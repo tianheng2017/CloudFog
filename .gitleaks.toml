@@ -1,0 +1,10 @@
+# gitleaks 允许列表（B1：源码内不含真实密钥——全部密钥经环境变量注入）。
+# backend/internal/config/config.go 的 mapstructure 标签/注释命中 generic-api-key 属低熵误报。
+[extend]
+useDefault = true
+
+[allowlist]
+description = "结构标签与注释的低熵误报（无真实密钥）"
+paths = [
+  '''backend/internal/config/config\.go''',
+]

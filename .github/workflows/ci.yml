@@ -23,6 +23,8 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
+          # go.mod 锁定 go 1.27.1：必须用 Go≥1.27 构建的 v2 二进制（v1.x 内置 go1.24 会拒绝加载配置）
+          version: v2.13.2
           working-directory: backend
       - name: go vet
         run: cd backend && go vet ./...
