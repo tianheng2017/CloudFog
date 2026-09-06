@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -169,15 +168,11 @@ func (r *Repository) ManualBalanceAdjust(ctx context.Context, userID int64, amou
 		return errors.New("repository: 调账金额不能为 0")
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 正负都要求变更后 balance >= 0（CK 兜底；条件更新返回受影响行）
-		var expr string
-		if amount.IsNegative() {
-			expr = "balance = balance + ?" // amount<0 → 减
-		} else {
-			expr = "balance = balance + ?"
-		}
+		// amount>0 增加 / <0 扣减，两者同为 balance = balance + ?；
+		// 条件 balance + ? >= 0 保证余额恒非负（CK 兜底；READ COMMITTED 行锁串行化并发）。
 		res := tx.Exec(
-			fmt.Sprintf(`UPDATE user_balances SET %s, updated_at = now() WHERE user_id = ? AND balance + ? >= 0`, expr),
+			`UPDATE user_balances SET balance = balance + ?, updated_at = now()
+			 WHERE user_id = ? AND balance + ? >= 0`,
 			amount, userID, amount)
 		if res.Error != nil {
 			return res.Error

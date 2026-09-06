@@ -266,6 +266,14 @@ func (a *Admin) handleUserPatch(c *gin.Context) {
 		writeAdminError(c, http.StatusBadRequest, "invalid_request", "请求体非法")
 		return
 	}
+	// 空 patch（无任何可改字段）显式拒绝，避免"成功但无变更"的空审计
+	if fields, err := patch.Apply(); err != nil {
+		writeAdminError(c, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	} else if len(fields) == 0 {
+		writeAdminError(c, http.StatusBadRequest, "invalid_request", "没有可更新的字段")
+		return
+	}
 	// 快照 before（审计非敏感字段）
 	prev, _ := a.Repo.UserByID(c.Request.Context(), id)
 	if prev == nil {
@@ -277,7 +285,13 @@ func (a *Admin) handleUserPatch(c *gin.Context) {
 		return
 	}
 	if err := a.Repo.UpdateUserProfile(c.Request.Context(), id, patch); err != nil {
-		writeAdminError(c, http.StatusBadRequest, "invalid_request", err.Error())
+		if repository.IsUniqueViolation(err) {
+			writeAdminError(c, http.StatusConflict, "conflict", "用户名/邮箱/电话已被其他用户占用")
+			return
+		}
+		// 不向客户端回显底层 DB 错误（08 §10：对外不暴露内部路径/约束细节）
+		a.log().Error("admin user patch", "id", id, "error", err)
+		writeAdminError(c, http.StatusBadRequest, "invalid_request", "更新失败")
 		return
 	}
 	after := gin.H{"timezone": nil}

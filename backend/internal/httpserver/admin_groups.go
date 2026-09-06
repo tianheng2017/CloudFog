@@ -128,12 +128,20 @@ func (a *Admin) handleGroupCreate(c *gin.Context) {
 		g.RateMultiplier = model.Decimal{Decimal: *p.RateMultiplier}
 	}
 	if err := a.Repo.CreateGroup(c.Request.Context(), g); err != nil {
+		if repository.IsUniqueViolation(err) {
+			writeAdminError(c, http.StatusConflict, "conflict", "分组名已存在")
+			return
+		}
 		a.log().Error("admin group create", "error", err)
-		writeAdminError(c, http.StatusInternalServerError, "server_error", "创建失败（名称可能已存在）")
+		writeAdminError(c, http.StatusInternalServerError, "server_error", "创建失败")
 		return
 	}
 	// 创建后一次性应用全部可选字段（fallback/rpm/并发/quota/sort 等）——此前仅补 allowed_models 会静默丢字段。
 	if err := a.Repo.UpdateGroup(c.Request.Context(), g.ID, p); err != nil {
+		if repository.IsUniqueViolation(err) {
+			writeAdminError(c, http.StatusConflict, "conflict", "分组名已存在")
+			return
+		}
 		a.log().Error("admin group create apply", "id", g.ID, "error", err)
 		writeAdminError(c, http.StatusInternalServerError, "server_error", "创建失败")
 		return
@@ -163,6 +171,10 @@ func (a *Admin) handleGroupPatch(c *gin.Context) {
 		return
 	}
 	if err := a.Repo.UpdateGroup(c.Request.Context(), id, p); err != nil {
+		if repository.IsUniqueViolation(err) {
+			writeAdminError(c, http.StatusConflict, "conflict", "分组名已存在")
+			return
+		}
 		a.log().Error("admin group patch", "error", err)
 		writeAdminError(c, http.StatusInternalServerError, "server_error", "更新失败")
 		return

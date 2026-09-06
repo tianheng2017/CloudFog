@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -300,5 +301,27 @@ func TestB3AdminManage(t *testing.T) {
 		must("sk-b3-admin", http.MethodPut, fmt.Sprintf("/users/%d", target.ID)+"/groups",
 			map[string]any{"group_ids": []int64{}}, http.StatusOK)
 		must("sk-b3-admin", http.MethodDelete, fmt.Sprintf("/groups/%d", created.ID), nil, http.StatusNoContent)
+	})
+
+	t.Run("错误码与信息不泄露", func(t *testing.T) {
+		// 空 patch → 400
+		must("sk-b3-admin", http.MethodPatch, fmt.Sprintf("/users/%d", target.ID), map[string]any{}, http.StatusBadRequest)
+		// username 撞唯一 → 409，且响应不回显底层 DB 约束细节（08 §10）
+		conflictResp := do("sk-b3-admin", http.MethodPatch, fmt.Sprintf("/users/%d", target.ID),
+			map[string]string{"username": super.Username})
+		raw, _ := io.ReadAll(io.LimitReader(conflictResp.Body, 1024))
+		conflictResp.Body.Close()
+		if conflictResp.StatusCode != http.StatusConflict {
+			t.Fatalf("username 冲突应 409, got %d", conflictResp.StatusCode)
+		}
+		if strings.Contains(string(raw), "duplicate") || strings.Contains(string(raw), "uq_") {
+			t.Fatalf("响应不得泄露内部约束信息: %s", raw)
+		}
+		// 组重名 → 409（复用 target 默认组名）
+		dup := do("sk-b3-admin", http.MethodPost, "/groups", map[string]string{"name": target.Username + "-g"})
+		defer dup.Body.Close()
+		if dup.StatusCode != http.StatusConflict {
+			t.Fatalf("组重名应 409, got %d", dup.StatusCode)
+		}
 	})
 }
