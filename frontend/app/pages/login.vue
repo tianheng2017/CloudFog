@@ -17,7 +17,9 @@ async function submit() {
       body: { login: form.login, password: form.password },
     })
     await store.fetchMe()
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/console'
+    // 仅接受站内相对路径（杜绝 //evil 协议相对或外域 redirect）
+    const q = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+    const redirect = q.startsWith('/') && !q.startsWith('//') ? q : '/console'
     await navigateTo(redirect)
   } catch (e: any) {
     errorMsg.value = e?.data?.error?.message || '登录失败，请重试'

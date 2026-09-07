@@ -25,6 +25,7 @@ export const useUserStore = defineStore('user', () => {
   }
   function reset() {
     me.value = null
+    loaded.value = false // 退出后置未加载：下次进受保护页重新探测会话
   }
   return { me, loaded, isAuthed, fetchMe, reset }
 })

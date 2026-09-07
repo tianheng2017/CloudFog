@@ -29,7 +29,11 @@ export default defineNuxtConfig({
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+        // favicon/地址栏主题色与 tokens 背景一致（light #FAFAFB / dark #0F1115）
+        { name: 'theme-color', media: '(prefers-color-scheme: light)', content: '#FAFAFB' },
+        { name: 'theme-color', media: '(prefers-color-scheme: dark)', content: '#0F1115' },
       ],
+      link: [{ rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
       script: [
         // 首帧防 FOUC：SSR HTML 到达即读 cf-theme/系统偏好设置 html.dark（在 CSS 应用前生效）
         {

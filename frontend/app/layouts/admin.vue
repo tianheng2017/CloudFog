@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // 管理后台布局（§11 信息密度优先）：会话登录（B4-7 后端已支持会话/API Key 双路鉴权）
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
 const store = useUserStore()
 const groups = [
   { title: '运营', items: [{ to: '/admin', label: '概览' }, { to: '/admin/channels', label: '渠道' }, { to: '/admin/users', label: '用户' }] },
@@ -13,6 +14,7 @@ async function logout() {
 </script>
 
 <template>
+  <ElConfigProvider :locale="zhCn">
   <div class="a-shell">
     <aside class="a-side">
       <NuxtLink to="/admin" class="a-brand">云之雾 Admin</NuxtLink>
@@ -31,6 +33,7 @@ async function logout() {
       <slot />
     </section>
   </div>
+  </ElConfigProvider>
 </template>
 
 <style scoped>

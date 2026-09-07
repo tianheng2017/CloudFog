@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import zhCn from 'element-plus/es/locale/lang/zh-cn'
-// 主题切换（暗色一等公民 §8.2）：默认跟随系统；显式选择存 cf-theme，html.dark 驱动 tokens
+// 主题切换（暗色一等公民 §8.2）：默认跟随系统；显式选择存 cf-theme，html.dark 驱动 tokens。
+// 注：Element Plus ConfigProvider（locale zh-cn）不在全局包裹——仅 EP 页面（console/admin/login/register 布局）需要，
+// 避免公开门户（SSR/SEO）为此加载 Element Plus runtime（见各 layout）。
 const dark = ref(false)
 const sync = () => document.documentElement.classList.toggle('dark', dark.value)
 if (import.meta.client) {
@@ -19,9 +20,7 @@ provide('theme-toggle', (d: boolean) => { dark.value = d })
 </script>
 
 <template>
-  <ElConfigProvider :locale="zhCn" namespace="el">
-    <NuxtLayout>
-      <NuxtPage />
-    </NuxtLayout>
-  </ElConfigProvider>
+  <NuxtLayout>
+    <NuxtPage />
+  </NuxtLayout>
 </template>

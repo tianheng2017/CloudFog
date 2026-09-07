@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // 用户控制台布局（CSR 单页）：侧栏导航 + 顶栏（主题/登出）
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
 const store = useUserStore()
 const nav = [
   { to: '/console', label: '概览' },
@@ -21,6 +22,7 @@ async function logout() {
 </script>
 
 <template>
+  <ElConfigProvider :locale="zhCn">
   <div class="c-shell">
     <aside class="c-side">
       <NuxtLink to="/console" class="c-brand">☁ 云之雾</NuxtLink>
@@ -40,6 +42,7 @@ async function logout() {
       <slot />
     </section>
   </div>
+  </ElConfigProvider>
 </template>
 
 <style scoped>

@@ -57,4 +57,16 @@ const nav = computed(() => [
 .cf-btn--ghost:hover { border-color: var(--cf-brand-500); color: var(--cf-brand-500); text-decoration: none; }
 .cf-footer { border-top: 1px solid var(--cf-line); padding: 28px 0 40px; margin-top: 64px; color: var(--cf-text-tertiary); font-size: 13px; }
 .cf-footer__inner { display: flex; justify-content: space-between; }
+
+/* 窄屏门户顶栏：压缩间距/字号，维持 4 导航入口（首行不换行） */
+@media (width < 720px) {
+  .cf-wrap { width: min(1120px, 100% - 28px); }
+  .cf-header__inner { height: 52px; gap: 10px; }
+  .cf-brand { font-size: 15px; }
+  .cf-brand__en { display: none; }
+  .cf-nav { gap: 0; margin-left: 0; }
+  .cf-nav__link { padding: 6px 7px; font-size: 13px; }
+  .cf-btn { height: 32px; padding: 0 10px; font-size: 13px; }
+  .cf-footer__inner { flex-direction: column; gap: 6px; }
+}
 </style>

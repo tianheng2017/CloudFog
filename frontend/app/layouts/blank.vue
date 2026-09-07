@@ -1,7 +1,14 @@
+<script setup lang="ts">
+// 认证/入口布局（login/register）：EP 组件需 zh-cn locale
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
+</script>
+
 <template>
-  <div class="b-wrap">
-    <slot />
-  </div>
+  <ElConfigProvider :locale="zhCn">
+    <div class="b-wrap">
+      <slot />
+    </div>
+  </ElConfigProvider>
 </template>
 
 <style scoped>
