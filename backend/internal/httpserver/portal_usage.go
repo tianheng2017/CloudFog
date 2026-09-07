@@ -138,6 +138,35 @@ func (p *Portal) handleMyUsageStats(c *gin.Context) {
 	}})
 }
 
+// handleMySummary 今日/本月用量概览（07 §3.1 GET /me/summary；UTC 日/月界，平台时区归看板）。
+func (p *Portal) handleMySummary(c *gin.Context) {
+	u, ok := currentUser(c)
+	if !ok {
+		return
+	}
+	now := time.Now().UTC()
+	todayStart := now.Truncate(24 * time.Hour)
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	ctx := c.Request.Context()
+	tToday, err := p.Repo.UsageTotals(ctx, u.ID, todayStart, now)
+	if err != nil {
+		p.log().Error("portal summary today", "user_id", u.ID, "error", err)
+		writeAPIError(c, http.StatusInternalServerError, "server_error", "汇总查询失败")
+		return
+	}
+	tMonth, err := p.Repo.UsageTotals(ctx, u.ID, monthStart, now)
+	if err != nil {
+		p.log().Error("portal summary month", "user_id", u.ID, "error", err)
+		writeAPIError(c, http.StatusInternalServerError, "server_error", "汇总查询失败")
+		return
+	}
+	totals := func(t repository.UsageTotals) gin.H {
+		return gin.H{"requests": t.Requests, "input_tokens": t.InputTokens,
+			"output_tokens": t.OutputTokens, "total_cost": t.TotalCost.String()}
+	}
+	c.JSON(http.StatusOK, gin.H{"today": totals(tToday), "month": totals(tMonth)})
+}
+
 func (p *Portal) handleMyBilling(c *gin.Context) {
 	u, ok := currentUser(c)
 	if !ok {

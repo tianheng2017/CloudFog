@@ -86,6 +86,7 @@ func (p *Portal) Register(eng *gin.Engine) {
 	me.GET("", p.handleMe)
 	me.GET("/balance", p.handleMeBalance)
 	me.GET("/groups", p.handleMeGroups)
+	me.GET("/summary", p.handleMySummary)
 	me.GET("/usage", p.handleMyUsage)
 	me.GET("/usage/stats", p.handleMyUsageStats)
 	me.GET("/billing", p.handleMyBilling)

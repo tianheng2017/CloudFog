@@ -26,6 +26,7 @@ import (
 	"cloudfog/internal/payment"
 	"cloudfog/internal/pkg/password"
 	"cloudfog/internal/repository"
+	"cloudfog/internal/stats"
 	"cloudfog/internal/task"
 )
 
@@ -839,5 +840,24 @@ func TestPortalUsageBilling(t *testing.T) {
 	if bl.StatusCode != http.StatusOK || !strings.Contains(string(blraw), `"type":"adjust"`) ||
 		!strings.Contains(string(blraw), `"amount":"5"`) {
 		t.Fatalf("/me/billing = %d %s", bl.StatusCode, blraw)
+	}
+
+	// ── b36：stats:aggregate 落表 + /me/summary 概览 ──
+	today := time.Now().UTC().Format("2006-01-02")
+	pay, _ := json.Marshal(map[string]string{"date": today})
+	if err := (&stats.Engine{Repo: repo}).HandleAggregate(ctx, task.Task{Type: task.TaskStatsAggregate, Payload: pay}); err != nil {
+		t.Fatalf("stats aggregate: %v", err)
+	}
+	var statRows int64
+	_ = db.Model(&model.UsageDailyStat{}).Where("stat_date = ? AND user_id = ?", time.Now().UTC().Truncate(24*time.Hour), ru.ID).Count(&statRows)
+	if statRows < 2 {
+		t.Fatalf("聚合应写 usage_daily_stats ≥2 行, got %d", statRows)
+	}
+	sum := do(tok, http.MethodGet, "/api/v1/me/summary")
+	sumraw, _ := io.ReadAll(sum.Body)
+	sum.Body.Close()
+	if sum.StatusCode != http.StatusOK || !strings.Contains(string(sumraw), `"today":`) ||
+		!strings.Contains(string(sumraw), `"requests":2`) {
+		t.Fatalf("/me/summary = %d %s", sum.StatusCode, sumraw)
 	}
 }

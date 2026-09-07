@@ -27,6 +27,7 @@ import (
 	"cloudfog/internal/payment"
 	"cloudfog/internal/pkg/logger"
 	"cloudfog/internal/repository"
+	"cloudfog/internal/stats"
 	"cloudfog/internal/task"
 
 	"github.com/redis/go-redis/v9"
@@ -123,6 +124,10 @@ func startRoles(role, configPath string) error {
 			return rds.Del(ctx, fmt.Sprintf("balance:%d", uid)).Err()
 		})}).Register(); err != nil {
 		return fmt.Errorf("启动失败: 注册支付确认 handler 失败: %w", err)
+	}
+	// b3-6：计量聚合 stats:aggregate（cron 触发 → 落 usage_daily_stats）
+	if err := (&stats.Engine{Repo: repo}).Register(); err != nil {
+		return fmt.Errorf("启动失败: 注册计量聚合 handler 失败: %w", err)
 	}
 
 	// dev 单进程（--role=all）自动引导（超管 + 内置种子，幂等）；生产用独立 bootstrap 子命令
