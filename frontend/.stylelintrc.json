@@ -1,8 +1,11 @@
 {
   "extends": ["stylelint-config-standard", "stylelint-config-recommended-vue"],
   "rules": {
-    "color-no-hex": [true, { "severity": "warning" }],
+    "color-no-hex": true,
     "no-descending-specificity": null,
-    "selector-class-pattern": null
+    "selector-class-pattern": null,
+    "declaration-block-no-redundant-longhand-properties": null,
+    "declaration-block-single-line-max-declarations": null,
+    "property-no-vendor-prefix": null
   }
 }

@@ -1,5 +1,5 @@
 {
-  "$schema": "设计令牌唯一事实源（docs/14-frontend.md §8）。构建时由 scripts/build-tokens.mjs 生成 app/assets/css/tokens.css（--cf-* 变量）。代码禁止硬编码色值。",
+  "$schema": "设计令牌唯一事实源（docs/14-frontend.md §8）。构建时由 scripts/build-tokens.mjs 生成 app/assets/css/tokens.css（--cf-* 变量）。代码禁止硬编码色值/间距。",
   "palette": {
     "brand": {
       "50": "#EEF4FE", "100": "#DCE8FD", "200": "#BAD1FB", "300": "#8FB4F6",
@@ -7,14 +7,20 @@
       "800": "#33539B", "900": "#2B447A"
     },
     "accent": { "500": "#8B5CF6", "600": "#7C4DE0" },
-    "semantic": {
-      "success": "#10B981", "warning": "#F59E0B", "danger": "#EF4444", "info": "#3B82F6"
-    },
+    "semantic": { "success": "#10B981", "warning": "#F59E0B", "danger": "#EF4444", "info": "#3B82F6" },
     "neutral": {
       "50": "#FAFAFB", "100": "#F4F5F7", "200": "#E8EAEE", "300": "#D5D9E0",
       "400": "#A9B0BC", "500": "#808894", "600": "#5B6370", "700": "#434A56",
       "800": "#2E333D", "900": "#1B1E24", "950": "#0F1115"
     }
+  },
+  "spacing": { "1": "4px", "2": "8px", "3": "12px", "4": "16px", "5": "24px", "6": "32px", "7": "48px", "8": "64px" },
+  "radius": { "sm": "6px", "md": "8px", "lg": "12px", "xl": "16px", "full": "999px" },
+  "shadow": {
+    "sm": "0 1px 2px rgba(15,17,21,0.06), 0 1px 3px rgba(15,17,21,0.10)",
+    "md": "0 4px 12px rgba(15,17,21,0.08), 0 2px 4px rgba(15,17,21,0.06)",
+    "lg": "0 12px 32px rgba(15,17,21,0.12), 0 4px 8px rgba(15,17,21,0.06)",
+    "brand": "0 6px 20px rgba(91,141,239,0.35)"
   },
   "themes": {
     "light": {
@@ -25,7 +31,24 @@
         "text-invert": "#FFFFFF"
       },
       "elementBridge": {
-        "--el-color-primary": "brand.500", "--el-color-danger": "semantic.danger"
+        "--el-color-primary": "brand.500",
+        "--el-color-danger": "semantic.danger",
+        "--el-text-color-primary": "var(--cf-text)",
+        "--el-text-color-regular": "var(--cf-text)",
+        "--el-text-color-secondary": "var(--cf-text-secondary)",
+        "--el-text-color-placeholder": "var(--cf-text-tertiary)",
+        "--el-text-color-disabled": "var(--cf-text-tertiary)",
+        "--el-bg-color": "var(--cf-bg)",
+        "--el-bg-color-overlay": "var(--cf-surface)",
+        "--el-fill-color-blank": "var(--cf-surface)",
+        "--el-fill-color-light": "var(--cf-surface-hover)",
+        "--el-fill-color-lighter": "var(--cf-bg-elev)",
+        "--el-fill-color-dark": "var(--cf-line)",
+        "--el-border-color": "var(--cf-line-strong)",
+        "--el-border-color-light": "var(--cf-line)",
+        "--el-border-color-lighter": "var(--cf-line)",
+        "--el-border-color-dark": "var(--cf-line-strong)",
+        "--el-border-color-hover": "var(--cf-brand-500)"
       }
     },
     "dark": {
@@ -36,7 +59,24 @@
         "text-invert": "#0F1115"
       },
       "elementBridge": {
-        "--el-color-primary": "brand.400", "--el-color-danger": "semantic.danger"
+        "--el-color-primary": "brand.400",
+        "--el-color-danger": "semantic.danger",
+        "--el-text-color-primary": "var(--cf-text)",
+        "--el-text-color-regular": "var(--cf-text)",
+        "--el-text-color-secondary": "var(--cf-text-secondary)",
+        "--el-text-color-placeholder": "var(--cf-text-tertiary)",
+        "--el-text-color-disabled": "var(--cf-text-tertiary)",
+        "--el-bg-color": "var(--cf-bg)",
+        "--el-bg-color-overlay": "var(--cf-surface)",
+        "--el-fill-color-blank": "var(--cf-surface)",
+        "--el-fill-color-light": "var(--cf-surface-hover)",
+        "--el-fill-color-lighter": "var(--cf-bg-elev)",
+        "--el-fill-color-dark": "var(--cf-line)",
+        "--el-border-color": "var(--cf-line-strong)",
+        "--el-border-color-light": "var(--cf-line)",
+        "--el-border-color-lighter": "var(--cf-line)",
+        "--el-border-color-dark": "var(--cf-line-strong)",
+        "--el-border-color-hover": "var(--cf-brand-400)"
       }
     }
   },

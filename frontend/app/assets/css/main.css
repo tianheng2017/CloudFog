@@ -42,18 +42,14 @@ code, pre, kbd { font-family: var(--cf-font-mono); }
 /* Element Plus 主题桥接：暗色由 html.dark 由 tokens.css 变量驱动（--el-color-* 已在 tokens 桥接） */
 html.dark body { color-scheme: dark; }
 
-/* 状态通用 Tag 色彩映射（Tag/Alert/图表共用一个语义源） */
+/* 状态通用 Tag（Tag/Alert/图表共用一个语义源；零硬编码色值，F12） */
 .cf-tag {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 1px 8px; border-radius: 999px; font-size: 12px; line-height: 20px;
+  padding: 1px 8px; border-radius: var(--cf-radius-full); font-size: 12px; line-height: 20px;
   border: 1px solid transparent; white-space: nowrap;
 }
-.cf-tag--success { color: #0E9F6E; background: color-mix(in srgb, #10B981 12%, transparent); border-color: color-mix(in srgb, #10B981 35%, transparent); }
-.cf-tag--warning { color: #B45309; background: color-mix(in srgb, #F59E0B 12%, transparent); border-color: color-mix(in srgb, #F59E0B 35%, transparent); }
-.cf-tag--danger  { color: #B91C1C; background: color-mix(in srgb, #EF4444 12%, transparent); border-color: color-mix(in srgb, #EF4444 35%, transparent); }
-.cf-tag--info    { color: #1D4ED8; background: color-mix(in srgb, #3B82F6 12%, transparent); border-color: color-mix(in srgb, #3B82F6 35%, transparent); }
+.cf-tag--success { color: var(--cf-semantic-success); background: color-mix(in srgb, var(--cf-semantic-success) 12%, transparent); border-color: color-mix(in srgb, var(--cf-semantic-success) 35%, transparent); }
+.cf-tag--warning { color: var(--cf-semantic-warning); background: color-mix(in srgb, var(--cf-semantic-warning) 12%, transparent); border-color: color-mix(in srgb, var(--cf-semantic-warning) 35%, transparent); }
+.cf-tag--danger  { color: var(--cf-semantic-danger); background: color-mix(in srgb, var(--cf-semantic-danger) 12%, transparent); border-color: color-mix(in srgb, var(--cf-semantic-danger) 35%, transparent); }
+.cf-tag--info    { color: var(--cf-semantic-info); background: color-mix(in srgb, var(--cf-semantic-info) 12%, transparent); border-color: color-mix(in srgb, var(--cf-semantic-info) 35%, transparent); }
 .cf-tag--muted   { color: var(--cf-text-secondary); background: var(--cf-surface-hover); }
-html.dark .cf-tag--success { color: #34D399; }
-html.dark .cf-tag--warning { color: #FBBF24; }
-html.dark .cf-tag--danger  { color: #F87171; }
-html.dark .cf-tag--info    { color: #60A5FA; }

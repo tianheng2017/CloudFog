@@ -81,7 +81,7 @@ const features = [
 .hero__sub { margin-top: 20px; max-width: 560px; font-size: 17px; color: var(--cf-text-secondary); }
 .hero__cta { margin-top: 32px; display: flex; gap: 12px; }
 .btn { display: inline-flex; align-items: center; height: 44px; padding: 0 22px; border-radius: 10px; font-weight: 600; border: 1px solid transparent; }
-.btn--primary { background: linear-gradient(120deg, var(--cf-brand-500), var(--cf-accent-600)); color: #fff; box-shadow: 0 6px 20px color-mix(in srgb, var(--cf-brand-500) 35%, transparent); }
+.btn--primary { background: linear-gradient(120deg, var(--cf-brand-500), var(--cf-accent-600)); color: var(--cf-text-invert); box-shadow: var(--cf-shadow-brand); }
 .btn--primary:hover { filter: brightness(1.05); text-decoration: none; }
 .btn--ghost { color: var(--cf-text); border-color: var(--cf-line-strong); }
 .btn--ghost:hover { border-color: var(--cf-brand-500); color: var(--cf-brand-500); text-decoration: none; }

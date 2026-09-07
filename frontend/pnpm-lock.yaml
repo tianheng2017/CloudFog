@@ -128,12 +128,15 @@ importers:
         specifier: ^4.5.0
         version: 4.6.4(vue@3.5.42)
     devDependencies:
+      postcss-html:
+        specifier: ^2.0.0
+        version: 2.0.0(postcss@8.5.28)
       stylelint:
         specifier: ^16.10.0
         version: 16.26.1(supports-color@10.2.2)
       stylelint-config-recommended-vue:
         specifier: ^1.5.0
-        version: 1.6.1(stylelint@16.26.1(supports-color@10.2.2))
+        version: 1.6.1(postcss-html@2.0.0(postcss@8.5.28))(stylelint@16.26.1(supports-color@10.2.2))
       stylelint-config-standard:
         specifier: ^36.0.0
         version: 36.0.1(stylelint@16.26.1(supports-color@10.2.2))
@@ -1973,6 +1976,9 @@ packages:
     resolution: {integrity: sha512-ztqyC3kLto0e9WbNp0aeP+M3kTt+nbaIveGmUxAtZa+8iFgKLUOD4YKM5j+f3QD89bra7UeumolZHKuOXnTmeQ==}
     engines: {node: '>=8'}
 
+  htmlparser2@9.1.0:
+    resolution: {integrity: sha512-5zfg6mHUoaer/97TxnGpxmbR7zJtPwIYFMZ/H5ucTlPZhKvtum05yiPK3Mgai3a0DyVxv7qYqoweaEd2nrYQzQ==}
+
   http-errors@2.0.1:
     resolution: {integrity: sha512-4FbRdAX+bSdmo4AUFuS0WNiPz8NgFt+r8ThgNWmlrjQjt1Q7ZR9+zTlce2859x4KSXrwIsaeTqDoKQmtP8pLmQ==}
     engines: {node: '>= 0.8'}
@@ -2123,6 +2129,9 @@ packages:
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
+
+  js-tokens@9.0.1:
+    resolution: {integrity: sha512-mxa9E9ITFOt0ban3j6L5MpjwegGz6lBQmM1IJkWeBZGcMxto50+eWdjC/52xDbS2vy0k7vIMK0Fe2wfL9OQSpQ==}
 
   js-yaml@4.3.2:
     resolution: {integrity: sha512-SFNOvSJ+Dgf/9An904Yx+CgSlIPCkIpao4qo51lpee25TIRejdH3rhR4EZMGoNx3/TP3O+wzWuiTFl4sqbltzA==}
@@ -2639,6 +2648,12 @@ packages:
     engines: {node: ^22.11.0 || ^24.11.0 || >=26.0}
     peerDependencies:
       postcss: ^8.5.26
+
+  postcss-html@2.0.0:
+    resolution: {integrity: sha512-f2Rvw5FCollEfVj3wfN7JdQb7n2rNIthW+epw2EByio7M6P7RH0BTj8a/ODHrUXd0cmO7ychb6YniymV93182Q==}
+    engines: {node: ^22.12 || >=24}
+    peerDependencies:
+      postcss: ^8.5.0
 
   postcss-merge-longhand@8.0.4:
     resolution: {integrity: sha512-ammolHhMvuTz/L9YN/ge1SWbUDcD3Y9o2gXlo3S6H4MCJHheyVPwcI/LAnSuNT4gcUmSF9pNTXo7+3M/2MFPAQ==}
@@ -5668,6 +5683,13 @@ snapshots:
 
   html-tags@3.3.1: {}
 
+  htmlparser2@9.1.0:
+    dependencies:
+      domelementtype: 2.3.0
+      domhandler: 5.0.3
+      domutils: 3.2.2
+      entities: 4.5.0
+
   http-errors@2.0.1:
     dependencies:
       depd: 2.0.0
@@ -5806,6 +5828,8 @@ snapshots:
   js-tokens@10.0.0: {}
 
   js-tokens@4.0.0: {}
+
+  js-tokens@9.0.1: {}
 
   js-yaml@4.3.2:
     dependencies:
@@ -6459,6 +6483,13 @@ snapshots:
     dependencies:
       postcss: 8.5.28
 
+  postcss-html@2.0.0(postcss@8.5.28):
+    dependencies:
+      htmlparser2: 9.1.0
+      js-tokens: 9.0.1
+      postcss: 8.5.28
+      postcss-safe-parser: 7.1.0(postcss@8.5.28)
+
   postcss-merge-longhand@8.0.4(postcss@8.5.28):
     dependencies:
       postcss: 8.5.28
@@ -6925,15 +6956,17 @@ snapshots:
       postcss: 8.5.28
       postcss-selector-parser: 7.1.6
 
-  stylelint-config-html@2.0.0(stylelint@16.26.1(supports-color@10.2.2)):
+  stylelint-config-html@2.0.0(postcss-html@2.0.0(postcss@8.5.28))(stylelint@16.26.1(supports-color@10.2.2)):
     dependencies:
+      postcss-html: 2.0.0(postcss@8.5.28)
       stylelint: 16.26.1(supports-color@10.2.2)
 
-  stylelint-config-recommended-vue@1.6.1(stylelint@16.26.1(supports-color@10.2.2)):
+  stylelint-config-recommended-vue@1.6.1(postcss-html@2.0.0(postcss@8.5.28))(stylelint@16.26.1(supports-color@10.2.2)):
     dependencies:
+      postcss-html: 2.0.0(postcss@8.5.28)
       semver: 7.8.5
       stylelint: 16.26.1(supports-color@10.2.2)
-      stylelint-config-html: 2.0.0(stylelint@16.26.1(supports-color@10.2.2))
+      stylelint-config-html: 2.0.0(postcss-html@2.0.0(postcss@8.5.28))(stylelint@16.26.1(supports-color@10.2.2))
       stylelint-config-recommended: 18.0.0(stylelint@16.26.1(supports-color@10.2.2))
 
   stylelint-config-recommended@14.0.1(stylelint@16.26.1(supports-color@10.2.2)):

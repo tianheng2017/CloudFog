@@ -11,7 +11,12 @@ export default defineNuxtConfig({
   // Element Plus 模块注入（基础组件，观感由 design-tokens.css 深度定制，§1.2）
   modules: ['@element-plus/nuxt', '@pinia/nuxt'],
 
-  css: ['~/assets/css/tokens.css', '~/assets/css/main.css'],
+  // 顺序：Element Plus 官方暗色变量铺底 → tokens 覆盖（--cf-* + --el-* 桥接）→ 全局基元
+  css: [
+    'element-plus/theme-chalk/dark/css-vars.css',
+    '~/assets/css/tokens.css',
+    '~/assets/css/main.css',
+  ],
 
   app: {
     head: {
