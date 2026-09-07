@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"cloudfog/internal/repository"
@@ -42,9 +43,11 @@ func (e *Engine) HandleAggregate(ctx context.Context, t task.Task) error {
 		}
 		day = d
 	}
-	if _, err := e.Repo.AggregateUsageDay(ctx, day); err != nil {
+	n, err := e.Repo.AggregateUsageDay(ctx, day)
+	if err != nil {
 		return err
 	}
+	slog.Default().Info("stats:aggregate 完成", "date", day.Format("2006-01-02"), "rows", n)
 	// 落表即完成；对账差异检测由 daily:reconcile 负责（B3-6）。
 	return nil
 }
