@@ -3,7 +3,7 @@
 *::before,
 *::after { box-sizing: border-box; }
 
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
 
 body {
   margin: 0;
@@ -13,6 +13,8 @@ body {
   background: var(--cf-bg);
   color: var(--cf-text);
   transition: background-color 0.2s ease, color 0.2s ease;
+  text-rendering: optimizelegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 h1, h2, h3, h4, p, ul, ol { margin: 0; }
@@ -31,11 +33,16 @@ img, svg { display: block; max-width: 100%; }
 }
 code, pre, kbd { font-family: var(--cf-font-mono); }
 
+::selection { background: color-mix(in srgb, var(--cf-brand-500) 24%, transparent); }
+
 :focus-visible {
   outline: 2px solid var(--cf-brand-500);
   outline-offset: 2px;
   border-radius: 4px;
 }
+
+/* 细滚动条（暗色随 tokens 自动） */
+* { scrollbar-width: thin; scrollbar-color: var(--cf-line-strong) transparent; }
 
 /* F13：尊重系统减弱动效（transition/animation 全部近零化，仍保留可见性） */
 @media (prefers-reduced-motion: reduce) {
@@ -62,10 +69,58 @@ html.js .cf-reveal.is-in { opacity: 1; transform: none; }
   html.js .cf-reveal { opacity: 1; transform: none; transition: none; }
 }
 
-::selection { background: color-mix(in srgb, var(--cf-brand-500) 24%, transparent); }
-
 /* Element Plus 主题桥接：暗色由 html.dark 由 tokens.css 变量驱动（--el-color-* 已在 tokens 桥接） */
 html.dark body { color-scheme: dark; }
+
+/* ─────────────────────────────────────────────
+   门户共享页面骨架（default layout 内 SSR 页统一排版）
+   ───────────────────────────────────────────── */
+.cf-page {
+  width: min(1120px, calc(100% - var(--cf-space-6)));
+  margin-inline: auto;
+  padding: clamp(44px, 7vw, 84px) 0 clamp(24px, 4vw, 56px);
+}
+.cf-page--narrow { width: min(760px, calc(100% - var(--cf-space-6))); }
+
+/* 页首：eyebrow + 大标题 + 副文，底部 1px 渐变细线收束 */
+.cf-page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--cf-space-5); flex-wrap: wrap; padding-bottom: var(--cf-space-6); position: relative; }
+
+.cf-page-head::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--cf-brand-500) 55%, transparent), color-mix(in srgb, var(--cf-line) 80%, transparent) 42%, transparent);
+}
+
+.cf-eyebrow {
+  display: inline-flex; align-items: center; gap: 10px; margin-bottom: var(--cf-space-3);
+  font-family: var(--cf-font-mono); font-size: 12px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--cf-brand-500);
+}
+.cf-eyebrow::before { content: ''; width: 26px; height: 1px; background: linear-gradient(90deg, transparent, currentcolor); }
+.cf-h1 { font-size: clamp(30px, 4.4vw, 44px); font-weight: 800; letter-spacing: -0.028em; line-height: 1.14; }
+.cf-sub { margin-top: 10px; font-size: 15.5px; line-height: 1.75; color: var(--cf-text-secondary); max-width: 60ch; }
+.cf-page-head__aside { display: flex; align-items: center; gap: 10px; }
+
+/* 统一空态 */
+.cf-empty {
+  margin-top: var(--cf-space-6); border: 1px dashed var(--cf-line-strong); border-radius: var(--cf-radius-xl);
+  padding: 64px 24px; text-align: center; color: var(--cf-text-secondary);
+  background: color-mix(in srgb, var(--cf-surface) 55%, transparent);
+}
+.cf-empty__icon { margin: 0 auto 14px; width: 46px; height: 46px; display: grid; place-items: center; border-radius: var(--cf-radius-lg); color: var(--cf-text-tertiary); background: var(--cf-surface-hover); border: 1px solid var(--cf-line); }
+.cf-empty__title { font-size: 15px; font-weight: 700; color: var(--cf-text); }
+.cf-empty__sub { margin-top: 6px; font-size: 13px; color: var(--cf-text-tertiary); }
+
+/* 在线状态点（header/footer 运营状态）——伪元素光晕扩散环 */
+.cf-live { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--cf-semantic-success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cf-semantic-success) 20%, transparent); }
+.cf-live::after { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 1px solid var(--cf-semantic-success); animation: cf-live-pulse 2.2s cubic-bezier(0.2, 0.6, 0.35, 1) infinite; }
+
+@keyframes cf-live-pulse { 0% { transform: scale(0.6); opacity: 0.8; } 70%, 100% { transform: scale(2.4); opacity: 0; } }
+
+/* 细箭头链接（读更多） */
+.cf-go { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13.5px; }
+.cf-go svg { transition: transform 0.18s ease; }
+.cf-go:hover svg { transform: translateX(3px); }
+.cf-go:hover { text-decoration: none; }
 
 /* 状态通用 Tag（Tag/Alert/图表共用一个语义源；零硬编码色值，F12） */
 .cf-tag {
