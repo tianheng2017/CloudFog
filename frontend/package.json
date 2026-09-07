@@ -1,0 +1,32 @@
+{
+  "name": "cloudfog-frontend",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "postinstall": "node scripts/build-tokens.mjs",
+    "tokens": "node scripts/build-tokens.mjs",
+    "dev": "node scripts/build-tokens.mjs && nuxt dev",
+    "build": "node scripts/build-tokens.mjs && nuxt build",
+    "generate": "node scripts/build-tokens.mjs && nuxt generate",
+    "preview": "nuxt preview",
+    "typecheck": "nuxt typecheck",
+    "lint:css": "stylelint \"app/**/*.{vue,css}\" --allow-empty-input"
+  },
+  "dependencies": {
+    "@element-plus/nuxt": "^1.0.14",
+    "@pinia/nuxt": "^0.11.0",
+    "element-plus": "^2.9.0",
+    "nuxt": "^4.2.0",
+    "vue": "^3.5.0",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "stylelint": "^16.10.0",
+    "stylelint-config-recommended-vue": "^1.5.0",
+    "stylelint-config-standard": "^36.0.0"
+  },
+  "packageManager": "pnpm@12.3.4"
+}

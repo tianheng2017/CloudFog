@@ -1,0 +1,59 @@
+/* 全局基元（docs/14-frontend.md §8）：色值一律走 --cf-*，禁硬编码；8pt 间距体系 */
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--cf-font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  background: var(--cf-bg);
+  color: var(--cf-text);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+h1, h2, h3, h4, p, ul, ol { margin: 0; }
+
+a { color: var(--cf-brand-500); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+img, svg { display: block; max-width: 100%; }
+
+/* 金额 / token / 延迟等数值：等宽数字 + 右对齐（§8.2 / F12） */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  text-align: right;
+  font-family: var(--cf-font-mono);
+}
+code, pre, kbd { font-family: var(--cf-font-mono); }
+
+:focus-visible {
+  outline: 2px solid var(--cf-brand-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection { background: color-mix(in srgb, var(--cf-brand-500) 24%, transparent); }
+
+/* Element Plus 主题桥接：暗色由 html.dark 由 tokens.css 变量驱动（--el-color-* 已在 tokens 桥接） */
+html.dark body { color-scheme: dark; }
+
+/* 状态通用 Tag 色彩映射（Tag/Alert/图表共用一个语义源） */
+.cf-tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 8px; border-radius: 999px; font-size: 12px; line-height: 20px;
+  border: 1px solid transparent; white-space: nowrap;
+}
+.cf-tag--success { color: #0E9F6E; background: color-mix(in srgb, #10B981 12%, transparent); border-color: color-mix(in srgb, #10B981 35%, transparent); }
+.cf-tag--warning { color: #B45309; background: color-mix(in srgb, #F59E0B 12%, transparent); border-color: color-mix(in srgb, #F59E0B 35%, transparent); }
+.cf-tag--danger  { color: #B91C1C; background: color-mix(in srgb, #EF4444 12%, transparent); border-color: color-mix(in srgb, #EF4444 35%, transparent); }
+.cf-tag--info    { color: #1D4ED8; background: color-mix(in srgb, #3B82F6 12%, transparent); border-color: color-mix(in srgb, #3B82F6 35%, transparent); }
+.cf-tag--muted   { color: var(--cf-text-secondary); background: var(--cf-surface-hover); }
+html.dark .cf-tag--success { color: #34D399; }
+html.dark .cf-tag--warning { color: #FBBF24; }
+html.dark .cf-tag--danger  { color: #F87171; }
+html.dark .cf-tag--info    { color: #60A5FA; }

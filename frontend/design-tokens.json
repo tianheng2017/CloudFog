@@ -1,0 +1,47 @@
+{
+  "$schema": "设计令牌唯一事实源（docs/14-frontend.md §8）。构建时由 scripts/build-tokens.mjs 生成 app/assets/css/tokens.css（--cf-* 变量）。代码禁止硬编码色值。",
+  "palette": {
+    "brand": {
+      "50": "#EEF4FE", "100": "#DCE8FD", "200": "#BAD1FB", "300": "#8FB4F6",
+      "400": "#6F9DF1", "500": "#5B8DEF", "600": "#4A7BDE", "700": "#3E67BD",
+      "800": "#33539B", "900": "#2B447A"
+    },
+    "accent": { "500": "#8B5CF6", "600": "#7C4DE0" },
+    "semantic": {
+      "success": "#10B981", "warning": "#F59E0B", "danger": "#EF4444", "info": "#3B82F6"
+    },
+    "neutral": {
+      "50": "#FAFAFB", "100": "#F4F5F7", "200": "#E8EAEE", "300": "#D5D9E0",
+      "400": "#A9B0BC", "500": "#808894", "600": "#5B6370", "700": "#434A56",
+      "800": "#2E333D", "900": "#1B1E24", "950": "#0F1115"
+    }
+  },
+  "themes": {
+    "light": {
+      "roles": {
+        "bg": "neutral.50", "bg-elev": "neutral.100", "surface": "#FFFFFF",
+        "surface-hover": "neutral.100", "line": "neutral.200", "line-strong": "neutral.300",
+        "text": "neutral.900", "text-secondary": "neutral.600", "text-tertiary": "neutral.500",
+        "text-invert": "#FFFFFF"
+      },
+      "elementBridge": {
+        "--el-color-primary": "brand.500", "--el-color-danger": "semantic.danger"
+      }
+    },
+    "dark": {
+      "roles": {
+        "bg": "neutral.950", "bg-elev": "neutral.900", "surface": "neutral.900",
+        "surface-hover": "neutral.800", "line": "neutral.800", "line-strong": "neutral.700",
+        "text": "neutral.50", "text-secondary": "neutral.400", "text-tertiary": "neutral.500",
+        "text-invert": "#0F1115"
+      },
+      "elementBridge": {
+        "--el-color-primary": "brand.400", "--el-color-danger": "semantic.danger"
+      }
+    }
+  },
+  "fonts": {
+    "sans": "'Inter', -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif",
+    "mono": "'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, monospace"
+  }
+}
