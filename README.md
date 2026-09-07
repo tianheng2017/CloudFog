@@ -266,3 +266,5 @@ cd frontend && pnpm install --frozen-lockfile && pnpm dev   # http://127.0.0.1:3
 make frontend-install frontend-tokens frontend-lint frontend-typecheck   # 前端门禁（install/tokens/stylelint/typecheck）
 make build test-unit test-integration                                      # 后端门禁
 ```
+
+**前端生产构建**：`cd frontend && pnpm build`。Nuxt 每次会清空重写 `.output/`（如被系统批量删除保护拦截，先手动删除该构建目录再构建）。
