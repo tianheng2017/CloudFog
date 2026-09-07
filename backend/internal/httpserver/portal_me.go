@@ -62,9 +62,25 @@ func (p *Portal) handleMeGroups(c *gin.Context) {
 		writeAPIError(c, http.StatusInternalServerError, "server_error", "分组查询失败")
 		return
 	}
-	items := make([]gin.H, 0, len(gs))
+	def := pr.User.DefaultGroupID
+	items := make([]gin.H, 0, len(gs)+1)
+	seen := map[int64]bool{}
 	for _, g := range gs {
-		items = append(items, gin.H{"id": g.ID, "name": g.Name, "status": g.Status})
+		seen[g.ID] = true
+		items = append(items, gin.H{"id": g.ID, "name": g.Name, "status": g.Status,
+			"is_default": def != nil && g.ID == *def})
+	}
+	// 默认分组即使未出现在可见集合（管理建用户场景）也应展示且可创建 Key（服务端 usable 判定含 default）
+	if def != nil && !seen[*def] {
+		dg, err := p.Repo.GroupByID(c.Request.Context(), *def)
+		if err != nil {
+			p.log().Error("portal me groups default", "error", err)
+			writeAPIError(c, http.StatusInternalServerError, "server_error", "分组查询失败")
+			return
+		}
+		if dg != nil && dg.Status == "active" {
+			items = append(items, gin.H{"id": dg.ID, "name": dg.Name, "status": dg.Status, "is_default": true})
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items})
 }

@@ -28,7 +28,7 @@ func (a *Admin) handleUserCreate(c *gin.Context) {
 		return
 	}
 	req.Username = strings.TrimSpace(req.Username)
-	req.Email = strings.TrimSpace(req.Email)
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email)) // 与注册一致小写存储（登录 lower 比对）
 	if req.Username == "" || req.Email == "" || !strings.Contains(req.Email, "@") || req.Password == "" {
 		writeAdminError(c, http.StatusBadRequest, "invalid_request", "username/email/password 必填且 email 格式须含 @")
 		return

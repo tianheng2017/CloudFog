@@ -124,9 +124,16 @@ func (p *Portal) handleMyKeysCreate(c *gin.Context) {
 		writeAPIError(c, http.StatusForbidden, "permission_denied", "无权使用该分组")
 		return
 	}
-	if _, err := p.Repo.GroupByID(ctx, *gid); err != nil {
+	// 分组须仍可用：default 分支未走 allowed（allowed 仅含 active），disabled 组会产出"活 Key 死分组"
+	// → 调用时 Authenticate 因 group 不可用失败，拒绝在此创建而非制造静默失效 Key。
+	grp, err := p.Repo.GroupByID(ctx, *gid)
+	if err != nil {
 		p.log().Error("portal me keys group", "error", err)
 		writeAPIError(c, http.StatusInternalServerError, "server_error", "分组校验失败")
+		return
+	}
+	if grp == nil || grp.Status != "active" {
+		writeAPIError(c, http.StatusBadRequest, "invalid_request", "分组不可用（已停用）")
 		return
 	}
 	cnt, err := p.Repo.CountUserKeys(ctx, u.ID)

@@ -23,6 +23,7 @@ import (
 	"cloudfog/internal/auth"
 	"cloudfog/internal/httpserver"
 	"cloudfog/internal/model"
+	"cloudfog/internal/pkg/password"
 	"cloudfog/internal/repository"
 )
 
@@ -402,6 +403,100 @@ func TestPortalMeAndKeys(t *testing.T) {
 		t.Fatal("删除后 Authenticate 应失败（吊销即时生效）")
 	}
 	must(tok, http.MethodDelete, fmt.Sprintf("/api/v1/me/keys/%d", created.ID), nil, http.StatusNotFound)
+	// ── 审查回归 ──
+	// F1：大写 email 注册 → 统一小写存储 → 小写登录成功
+	upEmail := fmt.Sprintf("B33Up-%d@T.CN", n)
+	ureg := do("", http.MethodPost, "/api/v1/auth/register",
+		map[string]any{"username": fmt.Sprintf("b33up-%d", n), "email": upEmail, "password": "S3cret-2026"})
+	ureg.Body.Close()
+	if ureg.StatusCode != http.StatusOK {
+		t.Fatalf("大写 email 注册应 200, got %d", ureg.StatusCode)
+	}
+	var upU model.User
+	if err := db.Where("email = ?", strings.ToLower(upEmail)).First(&upU).Error; err != nil {
+		t.Fatalf("email 应以小写存储: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Exec("DELETE FROM user_allowed_groups WHERE user_id = ?", upU.ID).Error
+		_ = db.Exec("DELETE FROM auth_sessions WHERE user_id = ?", upU.ID).Error
+		_ = db.Unscoped().Delete(&model.User{}, upU.ID).Error
+	})
+	upLog := do("", http.MethodPost, "/api/v1/auth/login",
+		map[string]any{"login": strings.ToLower(upEmail), "password": "S3cret-2026"})
+	upLog.Body.Close()
+	if upLog.StatusCode != http.StatusOK {
+		t.Fatalf("小写 email 登录应 200, got %d", upLog.StatusCode)
+	}
+	// F2/F3：管理风格建用户（无 allowed 行）——默认组 active 应见于 /me/groups；默认组 disabled 建 Key 应 400
+	gActive := &model.Group{Name: fmt.Sprintf("b33-ga-%d", n), Status: "active"}
+	gDisabled := &model.Group{Name: fmt.Sprintf("b33-gd-%d", n), Status: "disabled"}
+	if err := db.Create(gActive).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(gDisabled).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = db.Unscoped().Delete(&model.Group{}, gActive.ID).Error
+		_ = db.Unscoped().Delete(&model.Group{}, gDisabled.ID).Error
+	})
+	adminStyleUser := func(suffix string, dg *model.Group) int64 {
+		h, err := password.Hash("S3cret-2026")
+		if err != nil {
+			t.Fatal(err)
+		}
+		nm := fmt.Sprintf("b33as-%s-%d", suffix, n)
+		uu := &model.User{Username: nm, Email: nm + "@t.cn", PasswordHash: &h,
+			PasswordAlgo: "argon2id", Role: "user", Status: "active", DefaultGroupID: &dg.ID, Timezone: "UTC"}
+		if err := db.Create(uu).Error; err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			_ = db.Exec("DELETE FROM auth_sessions WHERE user_id = ?", uu.ID).Error
+			_ = db.Exec("DELETE FROM api_keys WHERE user_id = ?", uu.ID).Error
+			_ = db.Unscoped().Delete(&model.User{}, uu.ID).Error
+		})
+		return uu.ID
+	}
+	lgTok := func(uid int64) string {
+		var one model.User
+		if err := db.First(&one, uid).Error; err != nil {
+			t.Fatal(err)
+		}
+		l := do("", http.MethodPost, "/api/v1/auth/login",
+			map[string]any{"login": one.Username, "password": "S3cret-2026"})
+		var st struct {
+			Token string `json:"token"`
+		}
+		raw, _ := io.ReadAll(l.Body)
+		l.Body.Close()
+		if l.StatusCode != http.StatusOK {
+			t.Fatalf("login admin-style user = %d %s", l.StatusCode, raw)
+		}
+		_ = json.Unmarshal(raw, &st)
+		return st.Token
+	}
+	actID := adminStyleUser("a", gActive)
+	tokAct := lgTok(actID)
+	mg := do(tokAct, http.MethodGet, "/api/v1/me/groups", nil)
+	mgraw, _ := io.ReadAll(mg.Body)
+	mg.Body.Close()
+	if mg.StatusCode != http.StatusOK || !strings.Contains(string(mgraw),
+		fmt.Sprintf(`"id":%d`, gActive.ID)) || !strings.Contains(string(mgraw), `"is_default":true`) {
+		t.Fatalf("默认组（未在 allowed）应见于 /me/groups: %d %s", mg.StatusCode, mgraw)
+	}
+	disID := adminStyleUser("d", gDisabled)
+	tokDis := lgTok(disID)
+	mgd := do(tokDis, http.MethodGet, "/api/v1/me/groups", nil)
+	mgd.Body.Close()
+	if mgd.StatusCode != http.StatusOK {
+		t.Fatalf("/me/groups disabled default = %d", mgd.StatusCode)
+	}
+	kc2 := do(tokDis, http.MethodPost, "/api/v1/me/keys", map[string]any{"name": "x"})
+	kc2.Body.Close()
+	if kc2.StatusCode != http.StatusBadRequest {
+		t.Fatalf("默认组停用时建 Key 应 400, got %d", kc2.StatusCode)
+	}
 }
 
 func decimalFrom(s string) decimal.Decimal { return decimal.RequireFromString(s) }

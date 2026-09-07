@@ -194,7 +194,7 @@ func (p *Portal) handleRegister(c *gin.Context) {
 		return
 	}
 	req.Username = strings.TrimSpace(req.Username)
-	req.Email = strings.TrimSpace(req.Email)
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email)) // 统一小写存储：登录按 lower 比对，防大小写变体占位/歧义
 	if req.Username == "" || req.Email == "" || !strings.Contains(req.Email, "@") || req.Password == "" {
 		writeAPIError(c, http.StatusBadRequest, "invalid_request", "username/email/password 必填且 email 须含 @")
 		return
