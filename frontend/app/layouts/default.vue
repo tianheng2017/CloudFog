@@ -13,7 +13,8 @@ const nav = computed(() => [
     <header class="cf-header">
       <div class="cf-wrap cf-header__inner">
         <NuxtLink to="/" class="cf-brand">
-          <span class="cf-brand__mark">☁</span> 云之雾 <span class="cf-brand__en">CloudFog</span>
+          <svg class="cf-brand__mark" viewBox="0 0 20 20" width="22" height="22" fill="none" aria-hidden="true"><path d="M5 13a3.5 3.5 0 0 1 .6-6.9 4.6 4.6 0 0 1 8.8 1A3.2 3.2 0 0 1 15 13z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /><path d="M3 16h14M6 16.5c.8-1 2-1.6 3.5-1.6s2.7.6 3.5 1.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
+          云之雾 <span class="cf-brand__en">CloudFog</span>
         </NuxtLink>
         <nav class="cf-nav">
           <NuxtLink v-for="n in nav" :key="n.to" :to="n.to" class="cf-nav__link" active-class="cf-nav__link--active">{{ n.label }}</NuxtLink>
@@ -43,7 +44,7 @@ const nav = computed(() => [
 .cf-header { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(12px); background: color-mix(in srgb, var(--cf-bg) 78%, transparent); border-bottom: 1px solid var(--cf-line); }
 .cf-header__inner { height: 56px; display: flex; align-items: center; gap: 24px; }
 .cf-brand { display: flex; align-items: baseline; gap: 6px; font-weight: 700; font-size: 17px; color: var(--cf-text); }
-.cf-brand__mark { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--cf-brand-500) 60%, transparent)); }
+.cf-brand__mark { color: var(--cf-brand-500); }
 .cf-brand__en { font-size: 12px; font-weight: 500; color: var(--cf-text-tertiary); }
 .cf-nav { display: flex; gap: 4px; margin-left: 8px; }
 .cf-nav__link { padding: 6px 12px; border-radius: 8px; font-size: 14px; color: var(--cf-text-secondary); }
