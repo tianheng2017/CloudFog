@@ -14,16 +14,21 @@ import (
 
 	"cloudfog/internal/auth"
 	"cloudfog/internal/model"
+	"cloudfog/internal/payment"
 	"cloudfog/internal/pkg/password"
 	"cloudfog/internal/repository"
 )
 
-// Portal 用户自助/认证端（07 §3：/api/v1/auth + /api/v1/me）。
+// Portal 用户自助/认证端（07 §3：/api/v1/auth + /api/v1/me + /api/v1/payment）。
 // MVP 载体：opaque 会话 token（sess_ 前缀，Bearer/Cookie 双通道），与 API Key(sk-cf-)命名空间隔离。
 type Portal struct {
 	Repo *repository.Repository
 	Salt string
 	Log  *slog.Logger
+	// Pay 支付渠道服务（b3-4；nil 时 payment 端点返回不可用）。
+	Pay *payment.Service
+	// OrderExpire 充值订单有效期（<=0 用默认 30m）。
+	OrderExpire time.Duration
 
 	// RegistrationEnabled 注册总开关。config registration_enabled 接线前默认开启
 	//（10 §3.2 文档键已规划；B4 系统配置落库时改读配置）。
@@ -82,6 +87,13 @@ func (p *Portal) Register(eng *gin.Engine) {
 	me.POST("/keys", p.handleMyKeysCreate)
 	me.PATCH("/keys/:id", p.handleMyKeysPatch)
 	me.DELETE("/keys/:id", p.handleMyKeysDelete)
+
+	// 充值支付（b3-4，07 §3.1 /api/v1/payment，会话鉴权）
+	payGrp := eng.Group("/api/v1/payment")
+	payGrp.Use(RequestIDMiddleware(), p.sessionAuth())
+	payGrp.GET("/providers", p.handlePaymentProviders)
+	payGrp.POST("/orders", p.handlePaymentOrderCreate)
+	payGrp.GET("/orders/:no", p.handlePaymentOrderGet)
 }
 
 func (p *Portal) blocked(login string) (time.Time, bool) {

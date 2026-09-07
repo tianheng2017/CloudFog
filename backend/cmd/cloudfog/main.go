@@ -24,6 +24,7 @@ import (
 	"cloudfog/internal/httpserver"
 	"cloudfog/internal/migrate"
 	"cloudfog/internal/model"
+	"cloudfog/internal/payment"
 	"cloudfog/internal/pkg/logger"
 	"cloudfog/internal/repository"
 	"cloudfog/internal/task"
@@ -160,8 +161,11 @@ func startRoles(role, configPath string) error {
 			MKPrev: cfg.Security.PreviousMasterKey, Log: log,
 		})
 		// b3-3：认证/自助（注册默认开启；config registration_enabled 落库前显式 true）
+		// b3-4：充值支付（MVP mock 渠道；真实商户凭据接入时按 config payment.providers enabled 构造传入）
+		paySvc := payment.NewService(log, nil)
 		srv.MountPortal(&httpserver.Portal{Repo: repo, Salt: cfg.Security.APIKeySalt,
-			Log: log, RegistrationEnabled: true})
+			Log: log, RegistrationEnabled: true,
+			Pay: paySvc, OrderExpire: cfg.Payment.OrderExpire})
 		go func() {
 			if err := srv.Serve(); err != nil {
 				runErr <- fmt.Errorf("api 运行失败: %w", err)

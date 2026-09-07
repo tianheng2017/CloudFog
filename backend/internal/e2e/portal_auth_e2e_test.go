@@ -23,6 +23,7 @@ import (
 	"cloudfog/internal/auth"
 	"cloudfog/internal/httpserver"
 	"cloudfog/internal/model"
+	"cloudfog/internal/payment"
 	"cloudfog/internal/pkg/password"
 	"cloudfog/internal/repository"
 )
@@ -510,3 +511,154 @@ func TestPortalMeAndKeys(t *testing.T) {
 }
 
 func decimalFrom(s string) decimal.Decimal { return decimal.RequireFromString(s) }
+
+func TestPortalPaymentRecharge(t *testing.T) {
+	ctx := context.Background()
+	db := openDB(t)
+	repo := repository.New(db)
+	n := time.Now().UnixNano()
+	salt := "portal-pay-salt"
+
+	gin.SetMode(gin.ReleaseMode)
+	eng := gin.New()
+	_ = eng.SetTrustedProxies(nil)
+	(&httpserver.Portal{Repo: repo, Salt: salt, RegistrationEnabled: true,
+		Pay: payment.NewService(nil, nil)}).Register(eng)
+	srv := httptest.NewServer(eng)
+	defer srv.Close()
+
+	do := func(token, method, path string, body any) *http.Response {
+		var rd io.Reader
+		if body != nil {
+			b, _ := json.Marshal(body)
+			rd = bytes.NewReader(b)
+		}
+		req, _ := http.NewRequestWithContext(ctx, method, srv.URL+path, rd)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, path, err)
+		}
+		return resp
+	}
+	user := fmt.Sprintf("b34-u-%d", n)
+	reg := do("", http.MethodPost, "/api/v1/auth/register",
+		map[string]any{"username": user, "email": user + "@t.cn", "password": "S3cret-2026"})
+	var ru struct {
+		ID int64 `json:"id"`
+	}
+	rawR, _ := io.ReadAll(reg.Body)
+	reg.Body.Close()
+	if reg.StatusCode != http.StatusOK {
+		t.Fatalf("register = %d %s", reg.StatusCode, rawR)
+	}
+	_ = json.Unmarshal(rawR, &ru)
+	cleanupU := func() {
+		_ = db.Exec("DELETE FROM user_allowed_groups WHERE user_id = ?", ru.ID).Error
+		_ = db.Exec("DELETE FROM auth_sessions WHERE user_id = ?", ru.ID).Error
+		_ = db.Exec("DELETE FROM api_keys WHERE user_id = ?", ru.ID).Error
+		_ = db.Exec("DELETE FROM payment_orders WHERE user_id = ?", ru.ID).Error
+		_ = db.Exec("DELETE FROM billing_ledger WHERE user_id = ?", ru.ID).Error
+		_ = db.Exec("DELETE FROM user_balances WHERE user_id = ?", ru.ID).Error
+		_ = db.Unscoped().Delete(&model.User{}, ru.ID).Error
+	}
+	t.Cleanup(cleanupU)
+	lg := do("", http.MethodPost, "/api/v1/auth/login",
+		map[string]any{"login": user, "password": "S3cret-2026"})
+	var st struct {
+		Token string `json:"token"`
+	}
+	rawL, _ := io.ReadAll(lg.Body)
+	lg.Body.Close()
+	if lg.StatusCode != http.StatusOK {
+		t.Fatalf("login = %d", lg.StatusCode)
+	}
+	_ = json.Unmarshal(rawL, &st)
+	tok := st.Token
+
+	// 渠道列表含 mock
+	pv := do(tok, http.MethodGet, "/api/v1/payment/providers", nil)
+	pvraw, _ := io.ReadAll(pv.Body)
+	pv.Body.Close()
+	if pv.StatusCode != http.StatusOK || !strings.Contains(string(pvraw), `"code":"mock"`) {
+		t.Fatalf("providers = %d %s", pv.StatusCode, pvraw)
+	}
+	// 非法参数：0 / 负 / 超上限 / 非 USD → 400
+	for _, amt := range []string{"0", "-1", "5000.01"} {
+		bad := do(tok, http.MethodPost, "/api/v1/payment/orders", map[string]any{"amount": amt})
+		bad.Body.Close()
+		if bad.StatusCode != http.StatusBadRequest {
+			t.Fatalf("amount=%s 应 400, got %d", amt, bad.StatusCode)
+		}
+	}
+	cny := do(tok, http.MethodPost, "/api/v1/payment/orders",
+		map[string]any{"amount": "10", "currency": "CNY"})
+	cny.Body.Close()
+	if cny.StatusCode != http.StatusBadRequest {
+		t.Fatalf("CNY 应 400（MVP 仅 USD）, got %d", cny.StatusCode)
+	}
+	// 下单 → pending + pay_url
+	oc := do(tok, http.MethodPost, "/api/v1/payment/orders", map[string]any{"amount": "12.34"})
+	ocraw, _ := io.ReadAll(oc.Body)
+	oc.Body.Close()
+	if oc.StatusCode != http.StatusOK {
+		t.Fatalf("create order = %d %s", oc.StatusCode, ocraw)
+	}
+	var ores struct {
+		OrderNo string `json:"order_no"`
+		Status  string `json:"status"`
+		PayURL  string `json:"pay_url"`
+	}
+	if err := json.Unmarshal(ocraw, &ores); err != nil || ores.OrderNo == "" ||
+		ores.Status != "pending" || !strings.Contains(ores.PayURL, "mock://pay/") {
+		t.Fatalf("下单响应异常: %s", ocraw)
+	}
+	var row model.PaymentOrder
+	if err := db.Where("order_no = ?", ores.OrderNo).First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.Status != "pending" || row.Amount.String() != "12.34" || row.UserID != ru.ID || row.Type != "recharge" {
+		t.Fatalf("订单行异常: %+v", row)
+	}
+	// 查询本人订单
+	gq := do(tok, http.MethodGet, "/api/v1/payment/orders/"+ores.OrderNo, nil)
+	graw, _ := io.ReadAll(gq.Body)
+	gq.Body.Close()
+	if gq.StatusCode != http.StatusOK || !strings.Contains(string(graw), `"status":"pending"`) {
+		t.Fatalf("query own order = %d %s", gq.StatusCode, graw)
+	}
+	// 非本人订单 → 404（他人账号查询）
+	other := fmt.Sprintf("b34-o-%d", n)
+	reg2 := do("", http.MethodPost, "/api/v1/auth/register",
+		map[string]any{"username": other, "email": other + "@t.cn", "password": "S3cret-2026"})
+	var r2 struct {
+		ID int64 `json:"id"`
+	}
+	raw2, _ := io.ReadAll(reg2.Body)
+	reg2.Body.Close()
+	if reg2.StatusCode != http.StatusOK {
+		t.Fatalf("register2 = %d", reg2.StatusCode)
+	}
+	_ = json.Unmarshal(raw2, &r2)
+	t.Cleanup(func() {
+		_ = db.Exec("DELETE FROM user_allowed_groups WHERE user_id = ?", r2.ID).Error
+		_ = db.Exec("DELETE FROM auth_sessions WHERE user_id = ?", r2.ID).Error
+		_ = db.Unscoped().Delete(&model.User{}, r2.ID).Error
+	})
+	lg2 := do("", http.MethodPost, "/api/v1/auth/login",
+		map[string]any{"login": other, "password": "S3cret-2026"})
+	var st2 struct {
+		Token string `json:"token"`
+	}
+	rawL2, _ := io.ReadAll(lg2.Body)
+	lg2.Body.Close()
+	_ = json.Unmarshal(rawL2, &st2)
+	otherQ := do(st2.Token, http.MethodGet, "/api/v1/payment/orders/"+ores.OrderNo, nil)
+	otherQ.Body.Close()
+	if otherQ.StatusCode != http.StatusNotFound {
+		t.Fatalf("他人查询应 404, got %d", otherQ.StatusCode)
+	}
+}
