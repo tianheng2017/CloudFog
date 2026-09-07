@@ -1,10 +1,9 @@
 <script setup lang="ts">
 // 公告页（公开 SSR）。数据源后端 /api/v1/public/announcements（b45），未就绪空态。
 definePageMeta({ layout: 'default' })
-useSeoMeta({
+usePageSeo({
   title: '公告 — 云之雾',
   description: '云之雾服务公告：新模型上线、价格调整、维护通知。',
-  ogTitle: '公告 — 云之雾',
 })
 
 interface Announcement {

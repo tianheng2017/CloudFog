@@ -1,11 +1,9 @@
 <script setup lang="ts">
 // 公开门户首页（SSR，SEO 收载 F16）。模型/公告数据源后端 public 端点（B4-5 补齐），未就绪时优雅空态。
 definePageMeta({ layout: 'default' })
-useSeoMeta({
+usePageSeo({
   title: '云之雾 CloudFog — 统一的大模型 API 网关',
   description: '一套 API 接入多模型，按量计费、即开即用。OpenAI 兼容、自动降级、余额透明可查。',
-  ogTitle: '云之雾 CloudFog',
-  ogDescription: '统一的大模型 API 网关与开发者控制台',
 })
 
 // SSR 预取（payload 随首屏下发与 /models 页共享同一 key，避免二次请求）；后端未就绪 → 空态

@@ -55,6 +55,8 @@ export default defineNuxtConfig({
     apiServerBase: 'http://127.0.0.1:8080',
     public: {
       apiBase: '/api',
+      // canonical/OG 站点基址（部署 NUXT_PUBLIC_SITE_URL 覆盖）
+      siteUrl: 'https://api.cloudfog.example',
     },
   },
 

@@ -1,10 +1,9 @@
 <script setup lang="ts">
 // 模型广场（公开 SSR，SEO 收载 F16）。数据源后端 /api/v1/public/models（b45），未就绪优雅空态。
 definePageMeta({ layout: 'default' })
-useSeoMeta({
+usePageSeo({
   title: '模型广场 — 云之雾',
   description: '浏览云之雾当前开放的模型：上下文窗口、计费单价一目了然。OpenAI 兼容接入。',
-  ogTitle: '模型广场 — 云之雾',
 })
 const { data: models } = usePublicModels()
 </script>

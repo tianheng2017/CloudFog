@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 开发者文档（公开 SSR）。MVP：快速接入指南（静态内容，SEO 收载）。
 definePageMeta({ layout: 'default' })
-useSeoMeta({
+usePageSeo({
   title: '开发者文档 — 快速接入 — 云之雾',
   description: '3 分钟接入云之雾：获取 API Key、配置 base_url、完成首次对话。OpenAI SDK 兼容。',
 })
