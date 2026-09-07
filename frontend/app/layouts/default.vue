@@ -1,8 +1,10 @@
 <script setup lang="ts">
-// 公开门户布局（SSR）：顶栏 + 页脚，SEO 页使用 useSeoMeta 独立标题。
-// 注：模型广场/公告/文档页随 B4-4 落地后再挂入导航（当前不放置死链）。
+// 公开门户布局（SSR）：顶栏 + 页脚，SEO 页使用 useSeoMeta 独立标题
 const nav = computed(() => [
   { to: '/', label: '首页' },
+  { to: '/models', label: '模型广场' },
+  { to: '/announcements', label: '公告' },
+  { to: '/docs', label: '文档' },
 ])
 </script>
 

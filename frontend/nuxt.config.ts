@@ -8,8 +8,10 @@ export default defineNuxtConfig({
 
   devtools: { enabled: false },
 
-  // Element Plus 模块注入（基础组件，观感由 design-tokens.css 深度定制，§1.2）
+  // Element Plus（观感由 design-tokens.css 深度定制）+ Pinia
   modules: ['@element-plus/nuxt', '@pinia/nuxt'],
+  // 注：@nuxtjs/sitemap+@nuxtjs/robots 的 server 运行时与本栈（vite8/nitro 2.13）打包冲突待专项
+  // 解决（F16 sitemap.xml 自动化列为后续迭代；robots.txt 先以 public/ 静态提供）。
 
   // 顺序：Element Plus 官方暗色变量铺底 → tokens 覆盖（--cf-* + --el-* 桥接）→ 全局基元
   css: [

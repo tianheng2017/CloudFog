@@ -8,19 +8,8 @@ useSeoMeta({
   ogDescription: '统一的大模型 API 网关与开发者控制台',
 })
 
-interface DisplayModel {
-  id?: number
-  name?: string
-  display_name?: string
-  provider_code?: string
-  context_window?: number
-}
-// SSR 预取（payload 随首屏下发，避免二次请求）；后端未就绪 → 空态不抛错。
-// 服务端走绝对基址直连后端（生产 .output 无 devProxy），客户端同域 /api
-const { data: models } = await useAsyncData<DisplayModel[]>('public-models', () =>
-  $fetch<DisplayModel[]>(apiUrl('/v1/public/models')).catch(() => []),
-  { default: () => [] as DisplayModel[] },
-)
+// SSR 预取（payload 随首屏下发与 /models 页共享同一 key，避免二次请求）；后端未就绪 → 空态
+const { data: models } = usePublicModels()
 
 const features = [
   { icon: '⚡', title: 'OpenAI 兼容', desc: '改 base_url 即接入，官方 SDK 零改造' },
@@ -37,7 +26,7 @@ const features = [
         <p class="hero__sub">云之雾是统一的大模型 API 网关——一套密钥接入多家模型，按量计费、自动降级、用量与账单全程透明。</p>
         <div class="hero__cta">
           <NuxtLink to="/console" class="btn btn--primary">进入控制台</NuxtLink>
-          <a href="#models" class="btn btn--ghost">浏览模型广场</a>
+          <NuxtLink to="/models" class="btn btn--ghost">浏览模型广场</NuxtLink>
         </div>
         <div class="hero__snippet">
           <code>base_url = https://api.cloudfog.example/v1</code>
@@ -57,17 +46,17 @@ const features = [
 
     <section id="models" class="models">
       <div class="wrap">
-        <div class="sec-head"><h2>模型广场</h2><span class="sec-more">SSR 目录页即将开放</span></div>
+        <div class="sec-head"><h2>模型广场</h2><NuxtLink to="/models" class="sec-more">全部模型 →</NuxtLink></div>
         <div v-if="models.length" class="grid3">
-          <NuxtLink v-for="m in models" :key="m.id ?? m.name" :to="`/models/${m.name}`" class="card model">
+          <article v-for="m in models" :key="m.name" class="card model">
             <div class="model__name">{{ m.display_name || m.name }}</div>
             <div class="model__meta">
               <span>{{ m.provider_code }}</span>
               <span class="num" v-if="m.context_window">{{ m.context_window.toLocaleString() }} ctx</span>
             </div>
-          </NuxtLink>
+          </article>
         </div>
-        <div v-else class="empty">模型目录即将开放，敬请期待</div>
+        <div v-else class="empty">模型目录正在准备中，敬请期待</div>
       </div>
     </section>
   </div>
@@ -99,7 +88,7 @@ const features = [
 .models { padding: 40px 0; }
 .sec-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
 .sec-head h2 { font-size: 22px; }
-.sec-more { font-size: 12px; color: var(--cf-text-tertiary); }
+.sec-more { font-size: 13px; }
 .model__name { font-weight: 600; }
 .model__meta { margin-top: 8px; display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--cf-text-tertiary); }
 .empty { border: 1px dashed var(--cf-line-strong); border-radius: 14px; padding: 40px; text-align: center; color: var(--cf-text-tertiary); }

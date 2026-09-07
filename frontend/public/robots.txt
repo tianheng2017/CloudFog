@@ -1,0 +1,6 @@
+# CloudFog 公开门户（F16）：私有区禁止收录
+User-agent: *
+Allow: /
+Disallow: /console
+Disallow: /admin
+Disallow: /login
