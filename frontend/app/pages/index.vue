@@ -162,7 +162,9 @@ curl /v1/chat/completions \
 .hero__grid { position: relative; display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 48px; align-items: center; }
 .hero__main { animation: rise .6s ease both; }
 .pill { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--cf-text-secondary); padding: 5px 12px; border: 1px solid var(--cf-line); border-radius: 999px; background: color-mix(in srgb, var(--cf-surface) 72%, transparent); backdrop-filter: blur(6px); }
-.pill__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cf-semantic-success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cf-semantic-success) 22%, transparent); }
+.pill__dot { position: relative; width: 7px; height: 7px; border-radius: 50%; background: var(--cf-semantic-success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cf-semantic-success) 22%, transparent); }
+.pill__dot::after { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 1px solid var(--cf-semantic-success); animation: pill-pulse 2s cubic-bezier(0.2, 0.6, 0.35, 1) infinite; }
+@keyframes pill-pulse { 0% { transform: scale(0.7); opacity: 0.9; } 70%, 100% { transform: scale(2.6); opacity: 0; } }
 .hero__title { margin-top: 22px; font-size: clamp(38px, 5.6vw, 60px); line-height: 1.12; font-weight: 800; letter-spacing: -0.028em; }
 .grad { background: linear-gradient(100deg, var(--cf-brand-400), var(--cf-accent-500)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .hero__sub { margin-top: 18px; max-width: 540px; font-size: 16.5px; line-height: 1.75; color: var(--cf-text-secondary); }
