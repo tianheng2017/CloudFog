@@ -129,6 +129,10 @@ func startRoles(role, configPath string) error {
 	if err := (&stats.Engine{Repo: repo}).Register(); err != nil {
 		return fmt.Errorf("启动失败: 注册计量聚合 handler 失败: %w", err)
 	}
+	// b3-6：对账 daily:reconcile（前日 usage↔settle 差异检测）
+	if err := (&stats.ReconcileEngine{Repo: repo}).Register(); err != nil {
+		return fmt.Errorf("启动失败: 注册对账 handler 失败: %w", err)
+	}
 
 	// dev 单进程（--role=all）自动引导（超管 + 内置种子，幂等）；生产用独立 bootstrap 子命令
 	if role == "all" {

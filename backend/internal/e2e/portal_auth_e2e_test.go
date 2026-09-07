@@ -860,4 +860,31 @@ func TestPortalUsageBilling(t *testing.T) {
 		!strings.Contains(string(sumraw), `"requests":2`) {
 		t.Fatalf("/me/summary = %d %s", sum.StatusCode, sumraw)
 	}
+
+	// ── b36-4：daily:reconcile 对账（增量断言：共享 dev DB 全局残留致不可比绝对零）──
+	dayStart := time.Now().UTC().Truncate(24 * time.Hour)
+	rec0, err := repo.ReconcileDay(ctx, dayStart)
+	if err != nil {
+		t.Fatalf("reconcile before: %v", err)
+	}
+	settle := &model.BillingLedger{UserID: ru.ID, Type: "settle",
+		Amount:       model.Decimal{Decimal: decimal.NewFromFloat(-0.022)},
+		BalanceAfter: model.Decimal{Decimal: decimal.RequireFromString("4.978")},
+		RequestID:    fmt.Sprintf("settle-b36-%d", n), Description: "对账 settle"}
+	if err := db.Create(settle).Error; err != nil {
+		t.Fatalf("seed settle ledger: %v", err)
+	}
+	rec1, err := repo.ReconcileDay(ctx, dayStart)
+	if err != nil {
+		t.Fatalf("reconcile after: %v", err)
+	}
+	// settle 增加 -0.022 → SettledTotal +0.022、Diff -0.022、SettleCount +1（绝对零差异留给干净环境/每日任务日志）
+	want := decimal.NewFromFloat(0.022)
+	if !rec1.SettledTotal.Decimal.Sub(rec0.SettledTotal.Decimal).Equal(want) ||
+		!rec0.Diff.Decimal.Sub(rec1.Diff.Decimal).Equal(want) ||
+		rec1.SettleCount != rec0.SettleCount+1 {
+		t.Fatalf("对账增量异常: settled %s→%s diff %s→%s settle_n %d→%d",
+			rec0.SettledTotal.String(), rec1.SettledTotal.String(),
+			rec0.Diff.String(), rec1.Diff.String(), rec0.SettleCount, rec1.SettleCount)
+	}
 }

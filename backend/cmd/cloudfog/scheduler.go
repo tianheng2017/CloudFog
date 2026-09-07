@@ -48,9 +48,10 @@ func runScheduler(ctx context.Context, cfg *config.Config, log *slog.Logger, run
 
 	// 周期任务空负载 builder（worker 端 handler 依类型执行）：
 	//  - reserve:reclaim 冻结额度死信补偿（06 §3.3 L3/M12，MVP 起）
-	//  - stats:aggregate 计量聚合落 usage_daily_stats（b3-6，按 config.Scheduler.StatsAggregate cron 触发）
+	//  - stats:aggregate 计量聚合落 usage_daily_stats（b3-6）
+	//  - daily:reconcile 前日 usage↔settle 对账差异检测（b3-6）
 	periodicMu.Lock()
-	for _, ty := range []task.TaskType{task.TaskReserveReclaim, task.TaskStatsAggregate} {
+	for _, ty := range []task.TaskType{task.TaskReserveReclaim, task.TaskStatsAggregate, task.TaskDailyReconcile} {
 		periodicBuilders[ty] = func() (json.RawMessage, error) {
 			return json.RawMessage("{}"), nil
 		}
