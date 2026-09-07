@@ -25,7 +25,7 @@ type PublicModelOut struct {
 }
 
 // PublicModels 门户目录：status=active 且其供应商 active 的模型 + 当前生效价
-//（lateral 取 effective_from ≤ now 且未过期的最新价；软删两侧均过滤）。
+// （lateral 取 effective_from ≤ now 且未过期的最新价；软删两侧均过滤）。
 // 与前端 usePublicModels 契约一致（字段名对齐，b4-5）。
 func (r *Repository) PublicModels(ctx context.Context) ([]PublicModelOut, error) {
 	const q = `
@@ -39,7 +39,6 @@ LEFT JOIN LATERAL (
     FROM model_prices mp
     WHERE mp.model_id = m.id AND mp.effective_from <= now()
       AND (mp.effective_to IS NULL OR mp.effective_to > now())
-      AND mp.deleted_at IS NULL
     ORDER BY mp.effective_from DESC
     LIMIT 1
 ) p ON true
