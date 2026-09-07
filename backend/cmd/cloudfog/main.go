@@ -170,8 +170,13 @@ func startRoles(role, configPath string) error {
 			MKPrev: cfg.Security.PreviousMasterKey, Log: log,
 		})
 		// b3-3：认证/自助（注册默认开启；config registration_enabled 落库前显式 true）
-		// b3-4：充值支付（MVP mock 渠道；真实商户凭据接入时按 config payment.providers enabled 构造传入）
+		// b3-4：充值支付——真实渠道凭据接入时按 config 构造传入 NewService；
+		// mock 仅在 dev(--role=all) 显式注册（生产不启用，防无签名 notify 伪造充值）
 		paySvc := payment.NewService(log, nil)
+		if role == "all" && len(paySvc.List()) == 0 {
+			paySvc.RegisterProvider(&payment.MockProvider{})
+			log.Warn("dev(--role=all)：显式启用内置模拟支付渠道（演练用，禁止用于生产）")
+		}
 		srv.MountPortal(&httpserver.Portal{Repo: repo, Salt: cfg.Security.APIKeySalt,
 			Log: log, RegistrationEnabled: true,
 			Pay: paySvc, PayEnq: enq, OrderExpire: cfg.Payment.OrderExpire})

@@ -528,8 +528,10 @@ func TestPortalPaymentRecharge(t *testing.T) {
 	enq := task.NewMemoryEnqueuer(map[task.TaskType]func(context.Context, task.Task) error{
 		task.TaskPaymentConfirm: confirmEngine.HandleConfirm,
 	})
+	paySvc := payment.NewService(nil, nil)
+	paySvc.RegisterProvider(&payment.MockProvider{}) // 测试显式注入（与生产安全约定一致）
 	(&httpserver.Portal{Repo: repo, Salt: salt, RegistrationEnabled: true,
-		Pay: payment.NewService(nil, nil), PayEnq: enq}).Register(eng)
+		Pay: paySvc, PayEnq: enq}).Register(eng)
 	srv := httptest.NewServer(eng)
 	defer srv.Close()
 

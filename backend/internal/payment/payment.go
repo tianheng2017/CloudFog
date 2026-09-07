@@ -58,33 +58,37 @@ var (
 	ErrUnsupported   = errors.New("payment: 不支持的支付渠道")
 )
 
-// Service 渠道注册表（下单/回调分发）。内置 mock（未配置真实凭据时兜底，仅限开发/测试）。
+// Service 渠道注册表（下单/回调分发）。
+// 安全约定（b3-4 审计 R1）：**不得在未配置真实凭据时自动启用 mock**——mock 无签名 notify
+// 若暴露到真实环境可被伪造回调任意充值（资损）。mock 仅由部署层显式 RegisterProvider 注入
+// （本地开发/测试，M11 演练）；生产凭据缺失 → 支付不可用（安全失败）。
 type Service struct {
 	log         *slog.Logger
 	byCode      map[string]Provider
 	defaultCode string
 }
 
-// NewService 构建渠道服务。providers 为已启用真实渠道（凭据配置），否则仅 mock 并在日志标注。
+// NewService 以已启用真实渠道构建；real 可空 → 空注册表（下单/回调返回 ErrUnsupported）。
 func NewService(log *slog.Logger, real map[string]Provider) *Service {
 	s := &Service{byCode: map[string]Provider{}, log: log}
 	if s.log == nil {
 		s.log = slog.Default()
 	}
-	if len(real) == 0 {
-		m := &MockProvider{}
-		s.byCode[m.Code()] = m
-		s.defaultCode = m.Code()
-		s.log.Warn("payment: 未配置真实支付渠道凭据，启用内置模拟渠道（仅限开发/测试，M11 演练用）")
-		return s
+	for _, p := range real {
+		s.RegisterProvider(p)
 	}
-	for c, p := range real {
-		s.byCode[c] = p
-		if s.defaultCode == "" {
-			s.defaultCode = c
-		}
+	if len(s.byCode) == 0 {
+		s.log.Error("payment: 未配置任何支付渠道，充值/回调不可用（安全失败，防 mock 伪造利用）")
 	}
 	return s
+}
+
+// RegisterProvider 显式注册渠道（开发/测试注入 mock；后续真实 SDK 接入同一入口）。
+func (s *Service) RegisterProvider(p Provider) {
+	s.byCode[p.Code()] = p
+	if s.defaultCode == "" {
+		s.defaultCode = p.Code()
+	}
 }
 
 // Provider 按 code 取渠道。

@@ -78,7 +78,7 @@ func (p *Portal) handlePaymentOrderCreate(c *gin.Context) {
 	for attempt := 0; attempt < 3; attempt++ {
 		prov, perr := p.pickProvider(req.ProviderCode)
 		if perr != nil {
-			writeAPIError(c, http.StatusBadRequest, "invalid_request", perr.Error())
+			writeAPIError(c, http.StatusServiceUnavailable, "payment_unavailable", "未配置可用支付渠道")
 			return
 		}
 		no := payment.NewOrderNo(now)
@@ -157,10 +157,16 @@ func (p *Portal) handlePaymentOrderGet(c *gin.Context) {
 	})
 }
 
-// pickProvider 创建订单渠道选择：显式 code 或默认；不存在 → 错误（400 由调用方映射）。
+// pickProvider 创建订单渠道选择：显式 code 或默认；未配置渠道/不存在 → ErrUnsupported（调用方 400/503）。
 func (p *Portal) pickProvider(code string) (payment.Provider, error) {
+	if p.Pay == nil {
+		return nil, payment.ErrUnsupported
+	}
 	if code != "" {
 		return p.Pay.Provider(code)
 	}
-	return p.Pay.DefaultProvider(), nil
+	if dp := p.Pay.DefaultProvider(); dp != nil {
+		return dp, nil
+	}
+	return nil, payment.ErrUnsupported
 }

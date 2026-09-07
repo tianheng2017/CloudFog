@@ -42,7 +42,17 @@ func (p *Portal) handlePaymentNotify(c *gin.Context) {
 		return
 	}
 	// 重复回调（已入账/处理中）→ 直接成功（幂等）；渠道侧会持续重发直到收到 success
-	if o.Status == "paid" || (o.ProviderTradeNo != "" && o.ProviderTradeNo == payload.ProviderTradeNo) {
+	if o.Status == "paid" {
+		if o.ProviderTradeNo != payload.ProviderTradeNo {
+			// 已入账但回调流水号不同：异常（串号/重放他单/渠道异常），不得再入账，
+			// 记 error 供对账排查；仍返回 success 避免渠道无限重发。
+			p.log().Error("payment notify mismatch trade for paid order", "order_no", o.OrderNo,
+				"existing", o.ProviderTradeNo, "got", payload.ProviderTradeNo)
+		}
+		c.JSON(http.StatusOK, gin.H{"result": "success", "duplicate": true})
+		return
+	}
+	if o.ProviderTradeNo != "" && o.ProviderTradeNo == payload.ProviderTradeNo {
 		c.JSON(http.StatusOK, gin.H{"result": "success", "duplicate": true})
 		return
 	}
