@@ -25,7 +25,7 @@ const { data: list } = await useAsyncData<Announcement[]>('public-announcements'
     <div v-if="list.length" class="feed">
       <article v-for="a in list" :key="a.id ?? a.title" class="item">
         <h2>{{ a.title }}</h2>
-        <p class="item__time num" v-if="a.created_at">{{ a.created_at }}</p>
+        <p class="item__time num" v-if="a.created_at">{{ formatDate(a.created_at) }}</p>
         <p class="item__body">{{ a.content }}</p>
       </article>
     </div>

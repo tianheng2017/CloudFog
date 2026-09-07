@@ -85,7 +85,7 @@ function copyToken() {
           <span class="cf-tag" :class="row.status === 'active' ? 'cf-tag--success' : 'cf-tag--muted'">{{ row.status }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="创建时间" min-width="170"><template #default="{ row }">{{ row.created_at || '—' }}</template></el-table-column>
+      <el-table-column label="创建时间" min-width="170"><template #default="{ row }">{{ formatDateTime(row.created_at) }}</template></el-table-column>
       <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
           <el-button v-if="row.status === 'active'" link type="warning" @click="setStatus(row as KeyItem, 'disabled')">禁用</el-button>

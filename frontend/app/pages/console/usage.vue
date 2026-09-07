@@ -52,7 +52,7 @@ function statOf(p: Totals) {
         <el-table-column prop="model" label="模型" min-width="130" />
         <el-table-column label="Tokens (入/出)" width="150"><template #default="{ row }"><span class="num">{{ row.input_tokens ?? 0 }} / {{ row.output_tokens ?? 0 }}</span></template></el-table-column>
         <el-table-column label="费用 (USD)" width="130"><template #default="{ row }"><span class="num">{{ row.total_cost ?? '0' }}</span></template></el-table-column>
-        <el-table-column label="时间" min-width="170"><template #default="{ row }">{{ row.created_at || '—' }}</template></el-table-column>
+        <el-table-column label="时间" min-width="170"><template #default="{ row }">{{ formatDateTime(row.created_at) }}</template></el-table-column>
       </el-table>
     </el-card>
   </div>

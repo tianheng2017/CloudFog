@@ -43,7 +43,7 @@ function typeTag(t: string) {
         <el-table-column label="金额 (USD)" width="140"><template #default="{ row }"><span class="num" :style="{ color: row.type === 'settle' ? 'var(--cf-semantic-danger)' : 'var(--cf-semantic-success)' }">{{ row.amount }}</span></template></el-table-column>
         <el-table-column label="余额" width="140"><template #default="{ row }"><span class="num">{{ row.balance_after }}</span></template></el-table-column>
         <el-table-column prop="description" label="说明" min-width="180"><template #default="{ row }">{{ row.description || '—' }}</template></el-table-column>
-        <el-table-column label="时间" min-width="170"><template #default="{ row }">{{ row.created_at || '—' }}</template></el-table-column>
+        <el-table-column label="时间" min-width="170"><template #default="{ row }">{{ formatDateTime(row.created_at) }}</template></el-table-column>
       </el-table>
     </el-card>
   </div>
