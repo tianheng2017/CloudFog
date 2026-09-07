@@ -26,6 +26,13 @@ export default defineNuxtConfig({
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
       ],
+      script: [
+        // 首帧防 FOUC：SSR HTML 到达即读 cf-theme/系统偏好设置 html.dark（在 CSS 应用前生效）
+        {
+          innerHTML: `(function(){try{var t=localStorage.getItem('cf-theme');var d=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;if(d)document.documentElement.classList.add('dark')}catch(e){}})();`,
+          tagPriority: 'critical',
+        },
+      ],
     },
   },
 
@@ -41,7 +48,9 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
-    // 后端基址：dev 同源代理（见 nitro.devProxy）；生产同域 ingress 由部署编排保证
+    // public.apiBase：浏览器同域 /api（生产 ingress 同源）；apiServerBase：SSR 服务端直连后端绝对基址
+    //（nuxt dev 走 nitro.devProxy 可留默认；生产由 NUXT_API_SERVER_BASE 注入容器网络地址）
+    apiServerBase: 'http://127.0.0.1:8080',
     public: {
       apiBase: '/api',
     },

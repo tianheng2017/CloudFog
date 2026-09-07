@@ -41,7 +41,7 @@ async function submit() {
       <el-alert v-if="errorMsg" :title="errorMsg" type="error" :closable="false" style="margin-bottom: 12px" />
       <el-button type="primary" native-type="submit" :loading="loading" style="width: 100%">登 录</el-button>
     </el-form>
-    <p class="login__alt">还没有账号？<NuxtLink to="/register">注册</NuxtLink></p>
+    <p class="login__alt">还没有账号？自助注册将在后续开放</p>
   </div>
 </template>
 

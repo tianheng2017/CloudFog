@@ -1,10 +1,8 @@
 <script setup lang="ts">
-// 用户控制台布局（CSR 单页）：侧栏导航（b4-6 填充页）
+// 用户控制台布局（CSR 单页）：侧栏导航。
+// 注：密钥/用量/账单页随 B4-6 落地后挂入（当前不放置死链）。
 const nav = [
   { to: '/console', label: '概览' },
-  { to: '/console/keys', label: 'API 密钥' },
-  { to: '/console/usage', label: '用量' },
-  { to: '/console/billing', label: '账单与充值' },
 ]
 </script>
 

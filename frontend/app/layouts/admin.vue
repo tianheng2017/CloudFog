@@ -1,9 +1,8 @@
 <script setup lang="ts">
-// 管理后台布局：信息密度优先（§11），顶栏 + 左侧分组导航
+// 管理后台布局：信息密度优先（§11），顶栏 + 左侧分组导航。
+// 注：渠道/用户/模型/供应商/审计等面板随 B4-7 落地后挂入（当前不放置死链）。
 const groups = [
-  { title: '运营', items: [{ to: '/admin', label: '概览' }, { to: '/admin/channels', label: '渠道' }, { to: '/admin/users', label: '用户' }] },
-  { title: '目录', items: [{ to: '/admin/models', label: '模型与价格' }, { to: '/admin/providers', label: '供应商' }] },
-  { title: '系统', items: [{ to: '/admin/audit', label: '审计日志' }] },
+  { title: '运营', items: [{ to: '/admin', label: '概览' }] },
 ]
 </script>
 
