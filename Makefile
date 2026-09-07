@@ -1,9 +1,10 @@
-# 云之雾 B1 · 开发命令（Windows 下用 make.exe / wsl 均可；CI 在 Linux 执行）
+# 云之雾 开发命令（Windows 下用 make.exe / wsl 均可；CI 在 Linux 执行）
 SHELL := /bin/bash
 BACKEND_DIR := backend
+FRONTEND_DIR := frontend
 COMPOSE_FILE := deploy/docker-compose.dev.yml
 
-.PHONY: dev compose-up compose-down build vet lint test-unit test-integration test-race migrate-up migrate-down migrate-status tidy
+.PHONY: dev compose-up compose-down build vet lint test-unit test-integration test-race migrate-up migrate-down migrate-status tidy frontend-install frontend-tokens frontend-lint frontend-typecheck frontend-dev
 
 ## 拉起本地存储（PG18 + Redis 8.10 + RabbitMQ 4.2），容器已存在且健康则跳过
 compose-up:
@@ -13,10 +14,27 @@ compose-up:
 compose-down:
 	docker compose -f $(COMPOSE_FILE) down
 
-## 一键开发环境：存储 + 迁移 + 启动 all-in-one 进程
+## 后端一键开发：存储 + 迁移 + 启动 all-in-one 进程（含 mock 支付，dev 专用）
 dev: compose-up
 	cd $(BACKEND_DIR) && go run ./cmd/cloudfog migrate up
 	cd $(BACKEND_DIR) && go run ./cmd/cloudfog --role=all
+
+## ── B4 前端（Nuxt 4.2，pnpm；dev 代理 /api → 127.0.0.1:8080）──
+frontend-install:
+	cd $(FRONTEND_DIR) && pnpm install --frozen-lockfile
+
+frontend-tokens:
+	cd $(FRONTEND_DIR) && node scripts/build-tokens.mjs
+
+frontend-lint:
+	cd $(FRONTEND_DIR) && pnpm lint:css
+
+frontend-typecheck:
+	cd $(FRONTEND_DIR) && pnpm exec nuxt typecheck
+
+## 前端 dev server（先起后端 `make dev` 的 go run 进程）
+frontend-dev:
+	cd $(FRONTEND_DIR) && pnpm dev
 
 build:
 	cd $(BACKEND_DIR) && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/cloudfog ./cmd/cloudfog

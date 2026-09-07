@@ -234,3 +234,35 @@ flowchart LR
 | **信封加密（Envelope Encryption）** | 主密钥加密数据密钥（DEK）、DEK 加密凭证的两层结构；支持主密钥在线轮换 |
 | **账期** | 配额与账单的时间切分口径：配额/对账用平台时区，用户看板用用户时区（详见 [02 §13](./docs/02-data-model.md#13-时区与账期切分)） |
 | **HalfOpen 计数制** | 熔断恢复判定：窗口内最多 N 个试探请求、连续 M 次成功才转 Closed，任一失败回 Open 且冷却 ×2（详见 [05 §7](./docs/05-scheduling-resilience.md#7-熔断状态机)） |
+
+---
+
+## 九、快速开始（本地运行）
+
+> 本地开发 = 存储容器（`make compose-up`）+ 后端 Go 进程 + 前端 Nuxt（pnpm）。生产编排与灰度见 [10 §2](./docs/10-deployment.md#2-容器化部署)。
+
+### 1. 拉起依赖存储
+```bash
+make compose-up        # PG18 + Redis 8.10 + RabbitMQ 4.2（镜像版本锁定，见 deploy/docker-compose.dev.yml）
+```
+
+### 2. 启动后端（API/网关/异步 worker 一体化，dev 含 mock 支付渠道）
+```bash
+make dev               # 自动 migrate up → go run ./cmd/cloudfog --role=all（监听 :8080）
+```
+> 首次部署需 `bootstrap` 创建管理员账号并配置默认分组（注册用户依赖 active 分组，详见 13-operations 引导章节）。后端运行前设置环境变量：`CLOUDFOG_DSN / CLOUDFOG_REDIS_ADDR / CLOUDFOG_RABBITMQ_URL / CLOUDFOG_MASTER_KEY / CLOUDFOG_API_KEY_SALT`（10 §3.2）。
+
+### 3. 启动前端（控制台 / 门户）
+```bash
+cd frontend && pnpm install --frozen-lockfile && pnpm dev   # http://127.0.0.1:3000
+```
+- 门户公开页：`/`（SSR/SEO）、`/models`、`/announcements`、`/docs`
+- 用户自助：`/register`、`/login`、`/console`（API 密钥 / 用量 / 账单）
+- 管理端：`/admin`（渠道 / 模型 / 用户，会话登录；需 admin/super 角色）
+- dev 代理 `/api → http://127.0.0.1:8080`；生产同域由 ingress 保证（`NUXT_PUBLIC_SITE_URL` / `NUXT_API_SERVER_BASE` 覆盖站点基址与 SSR 后端直连地址）
+
+### 常用命令
+```bash
+make frontend-install frontend-tokens frontend-lint frontend-typecheck   # 前端门禁（install/tokens/stylelint/typecheck）
+make build test-unit test-integration                                      # 后端门禁
+```
