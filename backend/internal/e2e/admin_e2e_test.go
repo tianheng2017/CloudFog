@@ -350,7 +350,14 @@ func TestB3AdminManage(t *testing.T) {
 		if err := json.Unmarshal(raw, &created); err != nil || created.ID == 0 {
 			t.Fatalf("parse created user: %s", raw)
 		}
-		t.Cleanup(func() { _ = db.Unscoped().Delete(&model.User{}, created.ID).Error })
+		// 清理须先删 key/授权/会话再删用户（api_keys FK RESTRICT——曾漏删致孤儿行污染重跑）
+		cleanupCreated := func(uid int64) {
+			_ = db.Exec("DELETE FROM api_keys WHERE user_id = ?", uid).Error
+			_ = db.Exec("DELETE FROM user_allowed_groups WHERE user_id = ?", uid).Error
+			_ = db.Exec("DELETE FROM auth_sessions WHERE user_id = ?", uid).Error
+			_ = db.Unscoped().Delete(&model.User{}, uid).Error
+		}
+		t.Cleanup(func() { cleanupCreated(created.ID) })
 		var nu model.User
 		if err := db.First(&nu, created.ID).Error; err != nil {
 			t.Fatal(err)
@@ -371,6 +378,13 @@ func TestB3AdminManage(t *testing.T) {
 		ad.Body.Close()
 		if ad.StatusCode != http.StatusOK {
 			t.Fatalf("admin 建普通用户 = %d %s", ad.StatusCode, adRaw)
+		}
+		var admCreated struct {
+			ID int64 `json:"id"`
+		}
+		_ = json.Unmarshal(adRaw, &admCreated)
+		if admCreated.ID != 0 {
+			t.Cleanup(func() { cleanupCreated(admCreated.ID) })
 		}
 		// Key 列表：新用户 seed key → 列表含前缀且绝不含 key_hash 字段（脱敏）
 		seedVal := fmt.Sprintf("sk-cf-%06d", n%1000000) // 明文仅测试短串（≤16 入库 key_prefix 列）
