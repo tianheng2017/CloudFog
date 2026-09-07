@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -36,5 +37,32 @@ func TestLoginFailureGuard(t *testing.T) {
 	p.mu.Unlock()
 	if _, b := p.blocked(login); b {
 		t.Fatal("过期窗口应解除锁定")
+	}
+}
+
+func TestLoginFailureMapBounded(t *testing.T) {
+	p := &Portal{}
+	// 灌入超上限条目的零-until 计数（模拟枚举不存在账号）——内存有界（≤上限+余量），不清活跃锁定
+	for i := 0; i < loginFailMaxTracked*2; i++ {
+		p.recordFailure(fmt.Sprintf("nonexist-%d@x.io", i))
+	}
+	p.mu.Lock()
+	n := len(p.fails)
+	p.mu.Unlock()
+	if n > loginFailMaxTracked+64 {
+		t.Fatalf("失败 map 应有界（≤上限+余量）, got %d 条目", n)
+	}
+	// 生效中的锁定保留
+	live := "live-account"
+	for i := 0; i < maxLoginFailures; i++ {
+		p.recordFailure(live)
+	}
+	if _, b := p.blocked(live); !b {
+		t.Fatal("活跃锁定应保留")
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.fails) > loginFailMaxTracked+64 {
+		t.Fatalf("加入活跃锁后仍应有界, got %d", len(p.fails))
 	}
 }

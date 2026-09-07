@@ -45,6 +45,9 @@ const (
 	maxLoginFailures  = 5
 	loginLockWindow   = 15 * time.Minute
 	sessionTouchEvery = time.Minute
+	// loginFailMaxTracked 失败计数 map 上限：超过触发 prune 清掉已过期/未锁定条目。
+	// 无界增长是 DoS 面——攻击者枚举任意不存在账号也会落条目（防枚举 401 与成功同文案）。
+	loginFailMaxTracked = 4096
 )
 
 func (p *Portal) log() *slog.Logger {
@@ -108,6 +111,19 @@ func (p *Portal) recordFailure(login string) {
 	f.count++
 	if f.count >= maxLoginFailures {
 		f.until = now.Add(loginLockWindow)
+	}
+	// 有界：超过阈值时清扫已失效条目（未锁定计数无跨窗口价值；锁定已过窗口的可重计）
+	if len(p.fails) > loginFailMaxTracked {
+		p.pruneLocked(now)
+	}
+}
+
+// pruneLocked 删除过期/未锁定条目（须持锁调用）。保留仍生效中的锁定。
+func (p *Portal) pruneLocked(now time.Time) {
+	for k, b := range p.fails {
+		if b.until.IsZero() || now.After(b.until) {
+			delete(p.fails, k)
+		}
 	}
 }
 
