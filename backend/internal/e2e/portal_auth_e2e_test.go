@@ -404,17 +404,21 @@ func TestPortalMeAndKeys(t *testing.T) {
 	}
 	must(tok, http.MethodDelete, fmt.Sprintf("/api/v1/me/keys/%d", created.ID), nil, http.StatusNotFound)
 	// ── 审查回归 ──
-	// F1：大写 email 注册 → 统一小写存储 → 小写登录成功
+	// F1：大写 username/email 注册 → 统一小写存储 → 任意大小写均可登录（无变体歧义）
+	upUser := fmt.Sprintf("B33Up-%d", n)
 	upEmail := fmt.Sprintf("B33Up-%d@T.CN", n)
 	ureg := do("", http.MethodPost, "/api/v1/auth/register",
-		map[string]any{"username": fmt.Sprintf("b33up-%d", n), "email": upEmail, "password": "S3cret-2026"})
+		map[string]any{"username": upUser, "email": upEmail, "password": "S3cret-2026"})
 	ureg.Body.Close()
 	if ureg.StatusCode != http.StatusOK {
-		t.Fatalf("大写 email 注册应 200, got %d", ureg.StatusCode)
+		t.Fatalf("大写注册应 200, got %d", ureg.StatusCode)
 	}
 	var upU model.User
 	if err := db.Where("email = ?", strings.ToLower(upEmail)).First(&upU).Error; err != nil {
 		t.Fatalf("email 应以小写存储: %v", err)
+	}
+	if upU.Username != strings.ToLower(upUser) {
+		t.Fatalf("username 应以小写存储: %q", upU.Username)
 	}
 	t.Cleanup(func() {
 		_ = db.Exec("DELETE FROM user_allowed_groups WHERE user_id = ?", upU.ID).Error
@@ -426,6 +430,12 @@ func TestPortalMeAndKeys(t *testing.T) {
 	upLog.Body.Close()
 	if upLog.StatusCode != http.StatusOK {
 		t.Fatalf("小写 email 登录应 200, got %d", upLog.StatusCode)
+	}
+	upLog2 := do("", http.MethodPost, "/api/v1/auth/login",
+		map[string]any{"login": upUser, "password": "S3cret-2026"}) // 原始大小写也应可登录（lower 匹配）
+	upLog2.Body.Close()
+	if upLog2.StatusCode != http.StatusOK {
+		t.Fatalf("原始大小写 username 登录应 200, got %d", upLog2.StatusCode)
 	}
 	// F2/F3：管理风格建用户（无 allowed 行）——默认组 active 应见于 /me/groups；默认组 disabled 建 Key 应 400
 	gActive := &model.Group{Name: fmt.Sprintf("b33-ga-%d", n), Status: "active"}

@@ -193,8 +193,9 @@ func (p *Portal) handleRegister(c *gin.Context) {
 		writeAPIError(c, http.StatusBadRequest, "invalid_request", "请求体非法")
 		return
 	}
-	req.Username = strings.TrimSpace(req.Username)
-	req.Email = strings.ToLower(strings.TrimSpace(req.Email)) // 统一小写存储：登录按 lower 比对，防大小写变体占位/歧义
+	// 统一小写存储：登录按 lower(email)/lower(username) 比对，大小写变体并存会产生登录歧义（First 取一）
+	req.Username = strings.ToLower(strings.TrimSpace(req.Username))
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	if req.Username == "" || req.Email == "" || !strings.Contains(req.Email, "@") || req.Password == "" {
 		writeAPIError(c, http.StatusBadRequest, "invalid_request", "username/email/password 必填且 email 须含 @")
 		return
