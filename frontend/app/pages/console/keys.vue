@@ -22,7 +22,7 @@ async function load() {
   try {
     const r = await $fetch<{ items: KeyItem[] }>('/api/v1/me/keys', { credentials: 'include' })
     items.value = r.items || []
-  } finally { loading.value = false }
+  } catch { /* 鉴权失败由 auth.global 兜底跳登录；网络错误静默（页面空态） */ } finally { loading.value = false }
 }
 onMounted(load)
 

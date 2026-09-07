@@ -43,10 +43,11 @@ export default defineNuxtConfig({
     '/': { swr: 60 },
     '/models/**': { swr: 60 },
     '/announcements/**': { swr: 60 },
-    // 私有控制台：CSR + 无公开缓存（F16）
+    // 私有控制台/认证页：CSR + 无公开缓存（F16）
     '/console/**': { ssr: false },
     '/admin/**': { ssr: false },
     '/login': { ssr: false },
+    '/register': { ssr: false },
   },
 
   runtimeConfig: {

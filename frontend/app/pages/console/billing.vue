@@ -11,7 +11,7 @@ onMounted(async () => {
     balance.value = await $fetch('/api/v1/me/balance', { credentials: 'include' })
     const b = await $fetch<{ items: any[] }>('/api/v1/me/billing', { credentials: 'include' })
     items.value = b.items || []
-  } finally { loading.value = false }
+  } catch { /* 鉴权失败由 auth.global 兜底；网络错误静默（空态/重试） */ } finally { loading.value = false }
 })
 
 function typeTag(t: string) {

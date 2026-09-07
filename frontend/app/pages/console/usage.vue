@@ -12,7 +12,7 @@ onMounted(async () => {
     summary.value = await $fetch('/api/v1/me/summary', { credentials: 'include' })
     const u = await $fetch<{ items: any[] }>('/api/v1/me/usage', { credentials: 'include' })
     items.value = u.items || []
-  } finally { loading.value = false }
+  } catch { /* 鉴权失败由 auth.global 兜底；网络错误静默（空态/重试） */ } finally { loading.value = false }
 })
 
 function statOf(p: Totals) {
