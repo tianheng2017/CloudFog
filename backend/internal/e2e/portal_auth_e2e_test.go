@@ -724,3 +724,121 @@ func TestPortalPaymentRecharge(t *testing.T) {
 		t.Fatalf("重复回调后 ledger 应仍 1 条, got %d", ledCnt)
 	}
 }
+
+func TestPortalUsageBilling(t *testing.T) {
+	ctx := context.Background()
+	db := openDB(t)
+	repo := repository.New(db)
+	n := time.Now().UnixNano()
+	salt := "portal-usage-salt"
+
+	gin.SetMode(gin.ReleaseMode)
+	eng := gin.New()
+	_ = eng.SetTrustedProxies(nil)
+	(&httpserver.Portal{Repo: repo, Salt: salt, RegistrationEnabled: true}).Register(eng)
+	srv := httptest.NewServer(eng)
+	defer srv.Close()
+
+	do := func(token, method, path string) *http.Response {
+		req, _ := http.NewRequestWithContext(ctx, method, srv.URL+path, nil)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, path, err)
+		}
+		return resp
+	}
+	user := fmt.Sprintf("b35-u-%d", n)
+	// POST 需 body，统一走 doReg
+	doReg := func(method, path string, body any) *http.Response {
+		b, _ := json.Marshal(body)
+		req, _ := http.NewRequestWithContext(ctx, method, srv.URL+path, bytes.NewReader(b))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, path, err)
+		}
+		return resp
+	}
+	r1 := doReg(http.MethodPost, "/api/v1/auth/register",
+		map[string]any{"username": user, "email": user + "@t.cn", "password": "S3cret-2026"})
+	var ru struct {
+		ID int64 `json:"id"`
+	}
+	raw, _ := io.ReadAll(r1.Body)
+	r1.Body.Close()
+	if r1.StatusCode != http.StatusOK {
+		t.Fatalf("register = %d %s", r1.StatusCode, raw)
+	}
+	_ = json.Unmarshal(raw, &ru)
+	t.Cleanup(func() {
+		_ = db.Exec("DELETE FROM user_allowed_groups WHERE user_id = ?", ru.ID).Error
+		_ = db.Exec("DELETE FROM auth_sessions WHERE user_id = ?", ru.ID).Error
+		_ = db.Exec("DELETE FROM billing_ledger WHERE user_id = ?", ru.ID).Error
+		_ = db.Exec("DELETE FROM user_balances WHERE user_id = ?", ru.ID).Error
+		_ = db.Unscoped().Delete(&model.User{}, ru.ID).Error
+		// usage_logs 为 append-only（触发器禁止 DELETE）：request_id 唯一，逐运行自愈不清理
+	})
+	lg := doReg(http.MethodPost, "/api/v1/auth/login",
+		map[string]any{"login": user, "password": "S3cret-2026"})
+	var st struct {
+		Token string `json:"token"`
+	}
+	rawL, _ := io.ReadAll(lg.Body)
+	lg.Body.Close()
+	if lg.StatusCode != http.StatusOK {
+		t.Fatalf("login = %d", lg.StatusCode)
+	}
+	_ = json.Unmarshal(rawL, &st)
+	tok := st.Token
+
+	// 预置两笔用量（模拟一次真实调用的 usage_logs 产物）
+	now := time.Now().UTC()
+	seedUsage := func(modelName string, in, out int) string {
+		rid := fmt.Sprintf("req-b35-%s-%d", modelName, n)
+		ul := &model.UsageLog{RequestID: rid, UserID: ru.ID, APIKeyID: 1, ChannelID: 1,
+			Model: modelName, ProviderCode: "openai", InputTokens: in, OutputTokens: out,
+			TotalCost:  model.Decimal{Decimal: decimal.RequireFromString("0.0110000000")},
+			StatusCode: 200, CreatedAt: now}
+		if err := db.Create(ul).Error; err != nil {
+			t.Fatalf("seed usage: %v", err)
+		}
+		return rid
+	}
+	seedUsage("gpt-x", 100, 50)
+	seedUsage("gpt-y", 40, 10)
+
+	// 用量明细
+	ul := do(tok, http.MethodGet, "/api/v1/me/usage")
+	ulraw, _ := io.ReadAll(ul.Body)
+	ul.Body.Close()
+	if ul.StatusCode != http.StatusOK || !strings.Contains(string(ulraw), `"total":2`) ||
+		!strings.Contains(string(ulraw), `"model":"gpt-x"`) {
+		t.Fatalf("/me/usage = %d %s", ul.StatusCode, ulraw)
+	}
+	// 统计：requests=2、gpt-x tokens 正确
+	us := do(tok, http.MethodGet, "/api/v1/me/usage/stats")
+	usraw, _ := io.ReadAll(us.Body)
+	us.Body.Close()
+	if us.StatusCode != http.StatusOK || !strings.Contains(string(usraw), `"requests":2`) ||
+		!strings.Contains(string(usraw), `"model":"gpt-x"`) ||
+		!strings.Contains(string(usraw), `"total_cost":"0.022"`) {
+		t.Fatalf("/me/usage/stats = %d %s", us.StatusCode, usraw)
+	}
+	// 调账产生 ledger 后账单流水可见
+	if err := repo.EnsureBalance(ctx, ru.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.ManualBalanceAdjust(ctx, ru.ID, decimal.NewFromInt(5), "e2e 账单对账", nil); err != nil {
+		t.Fatal(err)
+	}
+	bl := do(tok, http.MethodGet, "/api/v1/me/billing?type=adjust")
+	blraw, _ := io.ReadAll(bl.Body)
+	bl.Body.Close()
+	if bl.StatusCode != http.StatusOK || !strings.Contains(string(blraw), `"type":"adjust"`) ||
+		!strings.Contains(string(blraw), `"amount":"5"`) {
+		t.Fatalf("/me/billing = %d %s", bl.StatusCode, blraw)
+	}
+}
