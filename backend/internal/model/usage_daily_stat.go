@@ -3,6 +3,7 @@ package model
 import "time"
 
 // UsageDailyStat 天级聚合（02 §6.2）：看板不直接扫 usage_logs。
+// stat_date = 北京日历日（date 列，2026-09-07 起口径为北京时间；内部聚合与用户统计统一）。
 // 唯一键 (stat_date, user_id, model, api_key_id)（空值占位允许 NULL）。
 // p95 用 jsonb 直方图桶计数存储（§6.2 例外 1）；avg_* 的"总和+次数"由 stats:aggregate 任务控制，
 // 本模型只承载 sum 值；展示均值时应用层相除。

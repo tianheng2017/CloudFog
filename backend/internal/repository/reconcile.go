@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"cloudfog/internal/model"
+	"cloudfog/internal/pkg/period"
 )
 
 // DayReconcile 单日对账结果（06 §7/§10：usage 应计成本 ↔ settle 已扣流水）。
@@ -16,12 +17,11 @@ type DayReconcile struct {
 	SettleCount  int64
 }
 
-// ReconcileDay 比对某 UTC 日 usage_logs 应计成本与 billing_ledger settle 扣费。
-// 口径：settle 流水 amount 为负（扣减），对账取其绝对值；diff≈0 即一致。
-// 仅统计不落库不改账（差异由调用方记录/告警，06 §7 差异进人工队列）。
+// ReconcileDay 比对某北京日历日 usage_logs 应计成本与 billing_ledger settle 扣费。
+// 口径：查询窗口取北京日界（period.DayBoundsUTC，2026-09-07 起与用户可见统计统一）；settle 流水
+// amount 为负（扣减），对账取其绝对值；diff≈0 即一致。仅统计不落库不改账（差异由调用方记录/告警）。
 func (r *Repository) ReconcileDay(ctx context.Context, day time.Time) (*DayReconcile, error) {
-	day = day.UTC().Truncate(24 * time.Hour)
-	next := day.Add(24 * time.Hour)
+	day, next := period.DayBoundsUTC(day)
 
 	var usage struct {
 		UsageTotal model.Decimal `gorm:"column:usage_total"`

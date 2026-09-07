@@ -26,3 +26,10 @@ func MonthStartUTC(t time.Time) time.Time {
 func DayLabel(t time.Time) string {
 	return t.In(CST).Format("2006-01-02")
 }
+
+// DateValue 参数所在北京日历日的 date 列表示（UTC 壁钟取同日日期，供 date 列写入/比对，
+// 避免把北京 00:00(=前日 16:00Z) 直接写 date 列产生跨日偏移）。
+func DateValue(t time.Time) time.Time {
+	y, m, d := t.In(CST).Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+}

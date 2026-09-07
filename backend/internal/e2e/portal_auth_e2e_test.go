@@ -25,6 +25,7 @@ import (
 	"cloudfog/internal/model"
 	"cloudfog/internal/payment"
 	"cloudfog/internal/pkg/password"
+	"cloudfog/internal/pkg/period"
 	"cloudfog/internal/repository"
 	"cloudfog/internal/stats"
 	"cloudfog/internal/task"
@@ -849,7 +850,7 @@ func TestPortalUsageBilling(t *testing.T) {
 		t.Fatalf("stats aggregate: %v", err)
 	}
 	var statRows int64
-	_ = db.Model(&model.UsageDailyStat{}).Where("stat_date = ? AND user_id = ?", time.Now().UTC().Truncate(24*time.Hour), ru.ID).Count(&statRows)
+	_ = db.Model(&model.UsageDailyStat{}).Where("stat_date = ? AND user_id = ?", period.DateValue(time.Now()), ru.ID).Count(&statRows)
 	if statRows < 2 {
 		t.Fatalf("聚合应写 usage_daily_stats ≥2 行, got %d", statRows)
 	}
@@ -862,7 +863,7 @@ func TestPortalUsageBilling(t *testing.T) {
 	}
 
 	// ── b36-4：daily:reconcile 对账（增量断言：共享 dev DB 全局残留致不可比绝对零）──
-	dayStart := time.Now().UTC().Truncate(24 * time.Hour)
+	dayStart := period.DateValue(time.Now()) // 北京今日 date 值（repo 取北京日界）
 	rec0, err := repo.ReconcileDay(ctx, dayStart)
 	if err != nil {
 		t.Fatalf("reconcile before: %v", err)

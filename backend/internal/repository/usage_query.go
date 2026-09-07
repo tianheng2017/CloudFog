@@ -54,7 +54,7 @@ type UsageStatRow struct {
 }
 
 // UsageAggregate 按模型聚合用量与金额（07 §3.1 /me/usage/stats）。
-// 注：created_at 为 UTC；按天切分以 UTC 日界为准（平台时区账期归看板批次）。
+// 区间由调用方显式给 from/to（用户按本地/北京时间账期自选），本函数不做日界切分。
 func (r *Repository) UsageAggregate(ctx context.Context, userID int64, from, to *time.Time) ([]UsageStatRow, error) {
 	db := r.db.WithContext(ctx).Model(&model.UsageLog{}).
 		Select("model, count(*) AS requests, coalesce(sum(input_tokens),0) AS input_tokens, "+

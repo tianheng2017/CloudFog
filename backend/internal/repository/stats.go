@@ -7,20 +7,22 @@ import (
 	"gorm.io/gorm"
 
 	"cloudfog/internal/model"
+	"cloudfog/internal/pkg/period"
 )
 
-// AggregateUsageDay 把某 UTC 日 usage_logs 按 (user_id, model) 聚合写入 usage_daily_stats。
+// AggregateUsageDay 把某北京日历日 usage_logs 按 (user_id, model) 聚合写入 usage_daily_stats。
+// 口径：查询窗口取北京日界 [00:00,24:00)（period.DayBoundsUTC），stat_date(date 列) 存该北京日日期。
 // MVP 维度：user × model（api_key_id/channel_id 留 NULL；看板批次扩展维度时按唯一键粒度 upsert）。
 // 幂等：整日 delete + insert（仅统计表非账本；同日重复执行结果一致）。
 func (r *Repository) AggregateUsageDay(ctx context.Context, day time.Time) (int, error) {
-	day = day.UTC().Truncate(24 * time.Hour)
-	next := day.Add(24 * time.Hour)
-	rows, err := aggregateUsageRows(ctx, r.db, day, next)
+	from, next := period.DayBoundsUTC(day)
+	statDate := period.DateValue(day) // date 列按北京日写入（UTC 壁钟同日期值，避免跨日偏移）
+	rows, err := aggregateUsageRows(ctx, r.db, from, next, statDate)
 	if err != nil {
 		return 0, err
 	}
 	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if e := tx.Where("stat_date = ?", day).Delete(&model.UsageDailyStat{}).Error; e != nil {
+		if e := tx.Where("stat_date = ?", statDate).Delete(&model.UsageDailyStat{}).Error; e != nil {
 			return e
 		}
 		for _, row := range rows {
@@ -34,7 +36,7 @@ func (r *Repository) AggregateUsageDay(ctx context.Context, day time.Time) (int,
 }
 
 // aggregateUsageRows 按 (user_id, model) 汇总日区间 usage_logs。
-func aggregateUsageRows(ctx context.Context, db *gorm.DB, from, to time.Time) ([]*model.UsageDailyStat, error) {
+func aggregateUsageRows(ctx context.Context, db *gorm.DB, from, to, statDate time.Time) ([]*model.UsageDailyStat, error) {
 	type raw struct {
 		UserID       int64
 		Model        string
@@ -64,7 +66,7 @@ func aggregateUsageRows(ctx context.Context, db *gorm.DB, from, to time.Time) ([
 	for _, x := range rs {
 		m := x.Model
 		stat := &model.UsageDailyStat{
-			StatDate: from, UserID: x.UserID, Model: &m,
+			StatDate: statDate, UserID: x.UserID, Model: &m,
 			RequestCount: x.RequestCount, SuccessCount: x.SuccessCount,
 			ErrorCount:  x.RequestCount - x.SuccessCount,
 			InputTokens: x.InputTokens, OutputTokens: x.OutputTokens,
