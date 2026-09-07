@@ -17,6 +17,14 @@ const newName = ref('')
 const token = ref('')
 const tokenOpen = ref(false)
 
+// 状态中文展示（页面状态一律中文）
+const statusMap: Record<string, { label: string; cls: string }> = {
+  active: { label: '启用', cls: 'cf-tag--success' },
+  disabled: { label: '已禁用', cls: 'cf-tag--muted' },
+  expired: { label: '已过期', cls: 'cf-tag--warning' },
+}
+function statusOf(s: string) { return statusMap[s] ?? { label: s, cls: 'cf-tag--muted' } }
+
 async function load() {
   loading.value = true
   try {
@@ -82,7 +90,7 @@ function copyToken() {
       <el-table-column prop="group_id" label="分组 ID" width="100"><template #default="{ row }">{{ row.group_id ?? '—' }}</template></el-table-column>
       <el-table-column label="状态" width="100">
         <template #default="{ row }">
-          <span class="cf-tag" :class="row.status === 'active' ? 'cf-tag--success' : 'cf-tag--muted'">{{ row.status }}</span>
+          <span class="cf-tag" :class="statusOf(row.status).cls">{{ statusOf(row.status).label }}</span>
         </template>
       </el-table-column>
       <el-table-column label="创建时间" min-width="170"><template #default="{ row }">{{ formatDateTime(row.created_at) }}</template></el-table-column>
