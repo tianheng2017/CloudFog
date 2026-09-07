@@ -19,6 +19,7 @@ interface DisplayModel {
 // 服务端走绝对基址直连后端（生产 .output 无 devProxy），客户端同域 /api
 const { data: models } = await useAsyncData<DisplayModel[]>('public-models', () =>
   $fetch<DisplayModel[]>(apiUrl('/v1/public/models')).catch(() => []),
+  { default: () => [] as DisplayModel[] },
 )
 
 const features = [

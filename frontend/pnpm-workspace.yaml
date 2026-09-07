@@ -1,7 +1,6 @@
 packages:
   - '.'
+# 前端工程构建脚本白名单（pnpm≥12 在 pnpm-workspace.yaml 用 allowBuilds 映射；package.json pnpm.* 已废弃）
 allowBuilds:
-  esbuild: set this to true or false
-onlyBuiltDependencies:
-  - esbuild
-  - '@parcel/watcher'
+  esbuild: true
+  '@parcel/watcher': true
