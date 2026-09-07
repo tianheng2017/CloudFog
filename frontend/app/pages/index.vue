@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 公开门户首页（SSR，SEO）。设计语言：工程精密的开发者基础设施（数据即界面/等宽数字/克制雾蓝渐变）。
+// 公开门户首页（SSR，SEO）。设计语言：工程精密的开发者基础设施（数据即界面/等宽数字/克制雾蓝渐变）。v2
 definePageMeta({ layout: 'default' })
 usePageSeo({
   title: '云之雾 CloudFog — 统一的大模型 API 网关',
@@ -69,7 +69,7 @@ curl /v1/chat/completions \
     <section class="models-strip">
       <div class="wrap">
         <div class="strip__label">接入即用 · 真实模型目录</div>
-        <div class="strip">
+        <div class="strip cf-reveal" v-reveal :style="{ '--d': '60ms' }">
           <span v-for="m in models.slice(0, 14)" :key="m.name" class="chip"><code class="num">{{ m.name }}</code><i v-if="m.provider_code" class="chip__src">{{ m.provider_code }}</i></span>
         </div>
         <NuxtLink to="/models" class="strip__more">查看全部 {{ models.length || '' }} 个模型 →</NuxtLink>
@@ -78,8 +78,8 @@ curl /v1/chat/completions \
 
     <section class="features">
       <div class="wrap">
-        <div class="sec-head"><span class="kicker">Why CloudFog</span><h2>把供应商的复杂度，挡在网关之后</h2></div>
-        <div class="f-grid">
+        <div class="sec-head cf-reveal" v-reveal><span class="kicker">Why CloudFog</span><h2>把供应商的复杂度，挡在网关之后</h2></div>
+        <div class="f-grid cf-reveal" v-reveal :style="{ '--d': '90ms' }">
           <article v-for="f in features" :key="f.title" class="f-card">
             <svg class="f-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path :d="f.icon" /></svg>
             <h3>{{ f.title }}</h3>
@@ -91,8 +91,8 @@ curl /v1/chat/completions \
 
     <section class="preview">
       <div class="wrap">
-        <div class="sec-head"><span class="kicker">Pricing</span><h2>价格透明，就像账单本身</h2><NuxtLink to="/models" class="sec-head__link">模型广场 →</NuxtLink></div>
-        <div v-if="models.length" class="p-grid">
+        <div class="sec-head cf-reveal" v-reveal><span class="kicker">Pricing</span><h2>价格透明，就像账单本身</h2><NuxtLink to="/models" class="sec-head__link">模型广场 →</NuxtLink></div>
+        <div v-if="models.length" class="p-grid cf-reveal" v-reveal :style="{ '--d': '80ms' }">
           <article v-for="m in models.slice(0, 6)" :key="m.name" class="p-card">
             <div class="p-card__top"><span class="p-card__name">{{ m.display_name || m.name }}</span><span class="chip chip--sm"><code class="num">{{ m.name }}</code></span></div>
             <div class="p-card__meta"><span>{{ m.provider_code }}</span><span v-if="m.context_window" class="num">{{ m.context_window.toLocaleString() }} ctx</span></div>
@@ -109,8 +109,8 @@ curl /v1/chat/completions \
 
     <section class="steps">
       <div class="wrap">
-        <div class="sec-head"><span class="kicker">Get started</span><h2>三分钟接入</h2></div>
-        <div class="s-grid">
+        <div class="sec-head cf-reveal" v-reveal><span class="kicker">Get started</span><h2>三分钟接入</h2></div>
+        <div class="s-grid cf-reveal" v-reveal :style="{ '--d': '70ms' }">
           <NuxtLink v-for="s in steps" :key="s.no" :to="s.to" class="s-card">
             <div class="num s-card__no">{{ s.no }}</div>
             <h3>{{ s.title }}</h3>
@@ -123,7 +123,7 @@ curl /v1/chat/completions \
 
     <section class="cta">
       <div class="wrap">
-        <div class="cta__inner">
+        <div class="cta__inner cf-reveal" v-reveal :style="{ '--d': '40ms' }">
           <h2>开始你的第一次调用</h2>
           <p>注册即送一套完整控制台：密钥、用量、账单，随时可查可吊销。</p>
           <div class="hero__cta">
