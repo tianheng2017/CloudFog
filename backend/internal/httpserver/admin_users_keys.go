@@ -80,6 +80,10 @@ func (a *Admin) handleUserCreate(c *gin.Context) {
 		writeAdminError(c, http.StatusInternalServerError, "server_error", "创建失败")
 		return
 	}
+	// 默认分组写入可见集合（与注册路径一致——否则管理建用户 /me/groups 空白、只能 default 分支建 Key）
+	if req.DefaultGroupID != nil {
+		_ = a.Repo.AllowUserGroup(c.Request.Context(), u.ID, *req.DefaultGroupID)
+	}
 	_ = a.audit(c, auditEntry{Action: "user.create", TargetType: "user", TargetID: idStr(u.ID),
 		After: gin.H{"username": req.Username, "role": req.Role}}, "success")
 	c.JSON(http.StatusOK, gin.H{"id": u.ID})

@@ -365,6 +365,12 @@ func TestB3AdminManage(t *testing.T) {
 		if nu.Status != "active" || nu.PasswordHash == nil || !strings.HasPrefix(*nu.PasswordHash, "$argon2id$") {
 			t.Fatalf("创建用户应 active 且 argon2id 密码哈希: %+v", nu)
 		}
+		// 默认分组应写入可见集合（与注册路径一致——曾漏 AllowUserGroup 致 /me/groups 空白）
+		var alwd int64
+		_ = db.Model(&model.UserAllowedGroup{}).Where("user_id = ? AND group_id = ?", created.ID, *nu.DefaultGroupID).Count(&alwd)
+		if alwd != 1 {
+			t.Fatalf("管理建用户默认分组应写入可见集合, allowed=%d", alwd)
+		}
 		// 重复 username → 409
 		must("sk-b3-super", http.MethodPost, "/users", map[string]any{
 			"username": uid2, "email": uid2 + "-dup@t.cn", "password": "S3cret-2026",
