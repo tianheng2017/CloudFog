@@ -97,7 +97,7 @@ func keySummary(k model.APIKey) gin.H {
 	return gin.H{
 		"id": k.ID, "name": k.Name, "key_prefix": k.KeyPrefix, "status": k.Status,
 		"expires_at": expires, "last_used_at": last, "created_at": k.CreatedAt,
-		"model_whitelist": k.ModelWhitelist,
+		"ip_whitelist": k.IPWhitelist, "model_whitelist": k.ModelWhitelist,
 	}
 }
 
