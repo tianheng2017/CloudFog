@@ -50,6 +50,6 @@ func (r *Repository) ReconcileDay(ctx context.Context, day time.Time) (*DayRecon
 		SettleCount:  settled.SettleCount,
 		SettledTotal: model.Decimal{Decimal: settled.SettledTotal.Abs()},
 	}
-	dr.Diff = model.Decimal{Decimal: dr.UsageTotal.Decimal.Sub(dr.SettledTotal.Decimal)}
+	dr.Diff = model.Decimal{Decimal: dr.UsageTotal.Sub(dr.SettledTotal.Decimal)}
 	return dr, nil
 }

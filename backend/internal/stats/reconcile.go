@@ -42,7 +42,7 @@ func (e *ReconcileEngine) HandleReconcile(ctx context.Context, t task.Task) erro
 	if err != nil {
 		return err
 	}
-	diff := res.Diff.Decimal.InexactFloat64()
+	diff := res.Diff.InexactFloat64()
 	if diff < 0 {
 		diff = -diff
 	}
