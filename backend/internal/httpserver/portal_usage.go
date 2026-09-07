@@ -29,7 +29,11 @@ func paginate(c *gin.Context) (offset, limit int) {
 	return (page - 1) * size, size
 }
 
-// parseRange 解析 from/to（RFC3339，可选）。
+// usageDefaultWindow 未给时间范围时的兜底窗口：避免对分区大表全历史扫描。
+const usageDefaultWindow = 30 * 24 * time.Hour
+
+// parseRange 解析 from/to（RFC3339，可选）。两者都缺省 → 默认最近 30 天窗口
+// （usage_logs 按月分区，无界扫描代价高且结果不可预期——审计 b35-1 修复）。
 func parseRange(c *gin.Context) (*time.Time, *time.Time, bool) {
 	parse := func(s string) (*time.Time, bool) {
 		if strings.TrimSpace(s) == "" {
@@ -44,7 +48,15 @@ func parseRange(c *gin.Context) (*time.Time, *time.Time, bool) {
 	}
 	from, ok1 := parse(c.Query("from"))
 	to, ok2 := parse(c.Query("to"))
-	return from, to, ok1 && ok2
+	if !ok1 || !ok2 {
+		return nil, nil, false
+	}
+	if from == nil && to == nil {
+		now := time.Now().UTC()
+		start := now.Add(-usageDefaultWindow)
+		from, to = &start, &now // 独立指针（同址会令 to 一并被改写为空窗口）
+	}
+	return from, to, true
 }
 
 // usageItem 用量明细脱敏投影（不含 client_ip/user_agent 等内部字段，08 §4.1）。

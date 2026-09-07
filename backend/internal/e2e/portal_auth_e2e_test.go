@@ -809,7 +809,6 @@ func TestPortalUsageBilling(t *testing.T) {
 	}
 	seedUsage("gpt-x", 100, 50)
 	seedUsage("gpt-y", 40, 10)
-
 	// 用量明细
 	ul := do(tok, http.MethodGet, "/api/v1/me/usage")
 	ulraw, _ := io.ReadAll(ul.Body)
