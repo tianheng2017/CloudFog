@@ -22,11 +22,11 @@ a:hover { text-decoration: underline; }
 
 img, svg { display: block; max-width: 100%; }
 
-/* 金额 / token / 延迟等数值：等宽数字 + 右对齐（§8.2 / F12） */
+/* 金额 / token / 延迟等数值：等宽数字 + 居中（用户偏好，2026-09-07 由右对齐改居中） */
 .num {
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum';
-  text-align: right;
+  text-align: center;
   font-family: var(--cf-font-mono);
 }
 code, pre, kbd { font-family: var(--cf-font-mono); }

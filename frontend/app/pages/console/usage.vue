@@ -28,7 +28,7 @@ function statOf(p: Totals) {
 <template>
   <div>
     <h1 class="pg-title">用量</h1>
-    <p class="pg-sub">金额/数字为等宽右对齐；统计以 UTC 日界为准</p>
+    <p class="pg-sub">金额/数字等宽居中；账期以北京时间为准（UTC+8）</p>
 
     <el-row v-if="summary" :gutter="16" style="margin-top: 18px">
       <el-col :span="12"><el-card shadow="never">

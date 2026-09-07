@@ -10,6 +10,7 @@ import (
 	"github.com/shopspring/decimal"
 
 	"cloudfog/internal/model"
+	"cloudfog/internal/pkg/period"
 	"cloudfog/internal/repository"
 )
 
@@ -138,15 +139,16 @@ func (p *Portal) handleMyUsageStats(c *gin.Context) {
 	}})
 }
 
-// handleMySummary 今日/本月用量概览（07 §3.1 GET /me/summary；UTC 日/月界，平台时区归看板）。
+// handleMySummary 今日/本月用量概览（07 §3.1 GET /me/summary）。
+// 账期口径：北京时间日/月界（用户偏好，2026-09-07）；usage 明细仍为 UTC 时刻（展示转本地）。
 func (p *Portal) handleMySummary(c *gin.Context) {
 	u, ok := currentUser(c)
 	if !ok {
 		return
 	}
 	now := time.Now().UTC()
-	todayStart := now.Truncate(24 * time.Hour)
-	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	todayStart, _ := period.DayBoundsUTC(now)
+	monthStart := period.MonthStartUTC(now)
 	ctx := c.Request.Context()
 	tToday, err := p.Repo.UsageTotals(ctx, u.ID, todayStart, now)
 	if err != nil {
