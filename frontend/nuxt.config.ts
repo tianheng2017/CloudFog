@@ -1,7 +1,7 @@
 // 云之雾前端（Nuxt 4.2）——配置唯一权威见 docs/14-frontend.md §1.2/§5。
 // 三层路由策略（§1.2/§11 F16）：公开门户 SSR（SEO）；console/admin CSR（私有，禁公开缓存）。
 // dev 不缓存公开页（swr 只作用于生产，便于本地迭代即时可见）。
-const isDev = process.env.NODE_ENV !== 'production'
+const isDev = (globalThis as any).process?.env?.NODE_ENV !== 'production'
 export default defineNuxtConfig({
   compatibilityDate: '2026-09-07',
 
