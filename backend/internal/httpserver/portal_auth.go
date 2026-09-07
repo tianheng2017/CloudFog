@@ -17,6 +17,7 @@ import (
 	"cloudfog/internal/payment"
 	"cloudfog/internal/pkg/password"
 	"cloudfog/internal/repository"
+	"cloudfog/internal/task"
 )
 
 // Portal 用户自助/认证端（07 §3：/api/v1/auth + /api/v1/me + /api/v1/payment）。
@@ -27,6 +28,8 @@ type Portal struct {
 	Log  *slog.Logger
 	// Pay 支付渠道服务（b3-4；nil 时 payment 端点返回不可用）。
 	Pay *payment.Service
+	// PayEnq 回调 → payment:confirm 投递器（nil 时 notify 返回 503，broker 不可达 fail-closed）。
+	PayEnq task.TaskEnqueuer
 	// OrderExpire 充值订单有效期（<=0 用默认 30m）。
 	OrderExpire time.Duration
 
@@ -94,6 +97,11 @@ func (p *Portal) Register(eng *gin.Engine) {
 	payGrp.GET("/providers", p.handlePaymentProviders)
 	payGrp.POST("/orders", p.handlePaymentOrderCreate)
 	payGrp.GET("/orders/:no", p.handlePaymentOrderGet)
+
+	// 支付渠道回调（06 §7.3）：无需会话，渠道服务器直连；验签/金额/幂等在 handler 层
+	notify := eng.Group("/api/v1/payment/notify")
+	notify.Use(RequestIDMiddleware())
+	notify.POST("/:provider", p.handlePaymentNotify)
 }
 
 func (p *Portal) blocked(login string) (time.Time, bool) {

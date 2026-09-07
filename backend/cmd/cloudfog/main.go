@@ -117,6 +117,13 @@ func startRoles(role, configPath string) error {
 	if err := (&billing.Engine{Repo: repo, Cache: reserve}).Register(); err != nil {
 		return fmt.Errorf("启动失败: 注册结算 handler 失败: %w", err)
 	}
+	// b3-4：payment:confirm 入账引擎（worker 消费；入账后 DEL 余额缓存，防充值后预扣读陈旧）
+	if err := (&payment.ConfirmEngine{Repo: repo,
+		Cache: payment.CacheResetFunc(func(ctx context.Context, uid int64) error {
+			return rds.Del(ctx, fmt.Sprintf("balance:%d", uid)).Err()
+		})}).Register(); err != nil {
+		return fmt.Errorf("启动失败: 注册支付确认 handler 失败: %w", err)
+	}
 
 	// dev 单进程（--role=all）自动引导（超管 + 内置种子，幂等）；生产用独立 bootstrap 子命令
 	if role == "all" {
@@ -148,8 +155,10 @@ func startRoles(role, configPath string) error {
 		// b2-5/6：v1 业务路由装配（鉴权 + 网关编排 + Redis 预扣 + 结算投递）
 		gw := &gateway.Gateway{Cat: repo, Bal: repo, List: repo, Res: reserve,
 			CredMK: cfg.Security.MasterKey, CredMKPrev: cfg.Security.PreviousMasterKey}
-		if enq, err := schedulerEnqueuer(ctx, cfg); err == nil {
-			gw.Prod = &billing.Producer{Enq: enq}
+		var enq task.TaskEnqueuer // 结算与支付回调共用 enqueuer
+		if enq0, err := schedulerEnqueuer(ctx, cfg); err == nil {
+			enq = enq0
+			gw.Prod = &billing.Producer{Enq: enq0}
 		} else {
 			log.Warn("结算投递器不可用（broker 未就绪），本次启动不投递计量任务", "error", err)
 		}
@@ -165,7 +174,7 @@ func startRoles(role, configPath string) error {
 		paySvc := payment.NewService(log, nil)
 		srv.MountPortal(&httpserver.Portal{Repo: repo, Salt: cfg.Security.APIKeySalt,
 			Log: log, RegistrationEnabled: true,
-			Pay: paySvc, OrderExpire: cfg.Payment.OrderExpire})
+			Pay: paySvc, PayEnq: enq, OrderExpire: cfg.Payment.OrderExpire})
 		go func() {
 			if err := srv.Serve(); err != nil {
 				runErr <- fmt.Errorf("api 运行失败: %w", err)

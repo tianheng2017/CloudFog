@@ -95,13 +95,14 @@ func (p *Portal) handlePaymentOrderCreate(c *gin.Context) {
 		if exp.IsZero() {
 			exp = now.Add(expire)
 		}
+		// ProviderTradeNo 留空：渠道流水号属回调/确认时的幂等键（06 §7.3），
+		// 下单预填会破坏重复回调判断与 confirm 的 CAS（WHERE provider_trade_no=''）。
 		order = &model.PaymentOrder{
 			OrderNo: no, UserID: u.ID, ProviderCode: prov.Code(),
-			ProviderTradeNo: res.TradeNo,
-			Amount:          model.Decimal{Decimal: amount},
-			Currency:        currency,
-			ExchangeRate:    model.Decimal{Decimal: decimal.NewFromInt(1)},
-			Type:            "recharge", Status: "pending",
+			Amount:       model.Decimal{Decimal: amount},
+			Currency:     currency,
+			ExchangeRate: model.Decimal{Decimal: decimal.NewFromInt(1)},
+			Type:         "recharge", Status: "pending",
 			ExpiredAt: &exp,
 		}
 		payURL = res.PayURL

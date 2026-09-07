@@ -131,6 +131,7 @@ func init() {
 	DefaultRegistry.Bind(QueueDefault, TaskUsageWrite)
 	DefaultRegistry.Bind(QueueCritical, TaskBillingSettle)
 	DefaultRegistry.Bind(QueueCritical, TaskBillingRefund)
+	DefaultRegistry.Bind(QueueCritical, TaskPaymentConfirm)
 	DefaultRegistry.Bind(QueueDefault, TaskPaymentQuery)
 	DefaultRegistry.Bind(QueueDefault, TaskStatsAggregate)
 	DefaultRegistry.Bind(QueueDefault, TaskBalanceNotify)
@@ -150,6 +151,7 @@ const (
 	TaskUsageWrite         TaskType = "usage:write"
 	TaskBillingSettle      TaskType = "billing:settle"
 	TaskBillingRefund      TaskType = "billing:refund"
+	TaskPaymentConfirm     TaskType = "payment:confirm"
 	TaskPaymentQuery       TaskType = "payment:query"
 	TaskStatsAggregate     TaskType = "stats:aggregate"
 	TaskDailyReconcile     TaskType = "daily:reconcile"

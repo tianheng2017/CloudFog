@@ -26,6 +26,7 @@ import (
 	"cloudfog/internal/payment"
 	"cloudfog/internal/pkg/password"
 	"cloudfog/internal/repository"
+	"cloudfog/internal/task"
 )
 
 func TestPortalAuthManage(t *testing.T) {
@@ -522,8 +523,13 @@ func TestPortalPaymentRecharge(t *testing.T) {
 	gin.SetMode(gin.ReleaseMode)
 	eng := gin.New()
 	_ = eng.SetTrustedProxies(nil)
+	// payment:confirm 由进程内 memory enqueuer → 引擎 handler 模拟 worker 消费（b34-3 幂等语义）
+	confirmEngine := &payment.ConfirmEngine{Repo: repo}
+	enq := task.NewMemoryEnqueuer(map[task.TaskType]func(context.Context, task.Task) error{
+		task.TaskPaymentConfirm: confirmEngine.HandleConfirm,
+	})
 	(&httpserver.Portal{Repo: repo, Salt: salt, RegistrationEnabled: true,
-		Pay: payment.NewService(nil, nil)}).Register(eng)
+		Pay: payment.NewService(nil, nil), PayEnq: enq}).Register(eng)
 	srv := httptest.NewServer(eng)
 	defer srv.Close()
 
@@ -660,5 +666,59 @@ func TestPortalPaymentRecharge(t *testing.T) {
 	otherQ.Body.Close()
 	if otherQ.StatusCode != http.StatusNotFound {
 		t.Fatalf("他人查询应 404, got %d", otherQ.StatusCode)
+	}
+
+	// ── 全链路（b34-2/3/5）：回调验签→投递→worker 幂等入账──
+	// 金额不符 → 400（防篡改 06 §7.3），订单保持 pending
+	wrongAmt := do("", http.MethodPost, "/api/v1/payment/notify/mock", map[string]any{
+		"order_no": ores.OrderNo, "provider_trade_no": "mock-" + ores.OrderNo, "amount": "12.33",
+	})
+	wrongAmt.Body.Close()
+	if wrongAmt.StatusCode != http.StatusBadRequest {
+		t.Fatalf("金额不符应 400, got %d", wrongAmt.StatusCode)
+	}
+	notifyBody := func() map[string]any {
+		return map[string]any{"order_no": ores.OrderNo, "provider_trade_no": "mock-" + ores.OrderNo, "amount": "12.34"}
+	}
+	nt := do("", http.MethodPost, "/api/v1/payment/notify/mock", notifyBody())
+	ntraw, _ := io.ReadAll(nt.Body)
+	nt.Body.Close()
+	if nt.StatusCode != http.StatusOK || !strings.Contains(string(ntraw), "success") {
+		t.Fatalf("notify = %d %s", nt.StatusCode, ntraw)
+	}
+	// 入账：余额 + 12.34、ledger 一条 recharge、订单 paid
+	balAfter := do(tok, http.MethodGet, "/api/v1/me/balance", nil)
+	balraw, _ := io.ReadAll(balAfter.Body)
+	balAfter.Body.Close()
+	if !strings.Contains(string(balraw), `"balance":"12.34"`) {
+		t.Fatalf("充值后余额应 12.34: %s", balraw)
+	}
+	var ledCnt int64
+	_ = db.Model(&model.BillingLedger{}).Where("user_id = ? AND type = 'recharge'", ru.ID).Count(&ledCnt)
+	if ledCnt != 1 {
+		t.Fatalf("应 1 条 recharge ledger, got %d", ledCnt)
+	}
+	qPaid := do(tok, http.MethodGet, "/api/v1/payment/orders/"+ores.OrderNo, nil)
+	qPaidraw, _ := io.ReadAll(qPaid.Body)
+	qPaid.Body.Close()
+	if !strings.Contains(string(qPaidraw), `"status":"paid"`) {
+		t.Fatalf("订单应 paid: %s", qPaidraw)
+	}
+	// 重复回调（同流水号）→ 200 幂等，余额不叠加、ledger 仍 1 条
+	nt2 := do("", http.MethodPost, "/api/v1/payment/notify/mock", notifyBody())
+	nt2raw, _ := io.ReadAll(nt2.Body)
+	nt2.Body.Close()
+	if nt2.StatusCode != http.StatusOK || !strings.Contains(string(nt2raw), "duplicate") {
+		t.Fatalf("重复回调应 success(duplicate): %d %s", nt2.StatusCode, nt2raw)
+	}
+	balAfter2 := do(tok, http.MethodGet, "/api/v1/me/balance", nil)
+	balraw2, _ := io.ReadAll(balAfter2.Body)
+	balAfter2.Body.Close()
+	if !strings.Contains(string(balraw2), `"balance":"12.34"`) {
+		t.Fatalf("重复回调不得叠加余额: %s", balraw2)
+	}
+	_ = db.Model(&model.BillingLedger{}).Where("user_id = ? AND type = 'recharge'", ru.ID).Count(&ledCnt)
+	if ledCnt != 1 {
+		t.Fatalf("重复回调后 ledger 应仍 1 条, got %d", ledCnt)
 	}
 }
