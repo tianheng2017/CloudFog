@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
@@ -61,10 +62,73 @@ func (a *Admin) log() *slog.Logger {
 	return slog.Default()
 }
 
-// Register 挂载 /api/v1/admin 组：RequestID → APIKeyAuth → RequireAdmin。
+// adminSessionOrKey 管理组鉴权（B4-7 控制台）：优先管理账号会话 Cookie（B4 控制台登录态），
+// 无会话时回退管理 API Key（Bearer sk-*，兼容既有客户端/脚本/e2e）。角色 admin/super 由 RequireAdmin 兜底。
+func (a *Admin) adminSessionOrKey() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tok, _ := auth.BearerToken(c.GetHeader("Authorization"))
+		if tok == "" {
+			tok, _ = c.Cookie(sessionCookieName)
+		}
+		if tok == "" {
+			abortAuth(c, http.StatusUnauthorized, auth.CodeInvalidAPIKey, "缺少管理身份")
+			return
+		}
+		ctx := c.Request.Context()
+		if strings.HasPrefix(tok, "sess_") {
+			s, err := a.Repo.AuthSessionByTokenHash(ctx, auth.HashKey(a.Salt, tok))
+			if err != nil {
+				a.log().Error("admin session lookup", "error", err)
+				abortAuth(c, http.StatusServiceUnavailable, auth.CodeSessionExpired, "鉴权服务暂不可用")
+				return
+			}
+			if s == nil {
+				abortAuth(c, http.StatusUnauthorized, auth.CodeSessionExpired, "会话不存在或已登出")
+				return
+			}
+			if time.Now().UTC().After(s.ExpiresAt) {
+				_ = a.Repo.DeleteAuthSessionByHash(ctx, auth.HashKey(a.Salt, tok))
+				abortAuth(c, http.StatusUnauthorized, auth.CodeSessionExpired, "会话已过期")
+				return
+			}
+			u, err := a.Repo.UserByID(ctx, s.UserID)
+			if err != nil {
+				a.log().Error("admin session user", "error", err)
+				abortAuth(c, http.StatusServiceUnavailable, auth.CodeSessionExpired, "鉴权服务暂不可用")
+				return
+			}
+			if u == nil || u.Status != "active" {
+				abortAuth(c, http.StatusUnauthorized, auth.CodeInvalidAPIKey, "账号不可用")
+				return
+			}
+			c.Set(principalCtxKey, &auth.Principal{User: u})
+			c.Next()
+			return
+		}
+		// API Key 路径：与 APIKeyAuth 中间件同语义（错误映射一致）
+		p, err := auth.Authenticate(ctx, a.Store, a.Salt, tok, c.ClientIP())
+		if err != nil {
+			var ae *auth.Error
+			if errors.As(err, &ae) {
+				status := http.StatusUnauthorized
+				if ae.Code == auth.CodeIPNotAllowed {
+					status = http.StatusForbidden
+				}
+				abortAuth(c, status, ae.Code, ae.Message)
+				return
+			}
+			abortAuth(c, http.StatusServiceUnavailable, auth.CodeInvalidAPIKey, "鉴权服务暂不可用")
+			return
+		}
+		c.Set(principalCtxKey, p)
+		c.Next()
+	}
+}
+
+// Register 挂载 /api/v1/admin 组：RequestID → 会话/API Key → RequireAdmin。
 func (a *Admin) Register(eng *gin.Engine) {
 	g := eng.Group("/api/v1/admin")
-	g.Use(RequestIDMiddleware(), APIKeyAuth(a.Store, a.Salt), RequireAdmin())
+	g.Use(RequestIDMiddleware(), a.adminSessionOrKey(), RequireAdmin())
 	// 用户与分组
 	g.GET("/users", a.handleUsersList)
 	g.POST("/users", a.handleUserCreate)

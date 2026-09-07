@@ -124,3 +124,30 @@ jobs:
         with:
           name: cloudfog-linux-amd64
           path: backend/bin/cloudfog
+
+  # B4 前端门禁：类型（vue-tsc 严格）→ 样式（stylelint 无硬编码色值）→ SSR build
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.3.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: install（frozen-lockfile）
+        run: pnpm install --frozen-lockfile
+      - name: tokens 生成
+        run: node scripts/build-tokens.mjs
+      - name: stylelint（无硬编码色值）
+        run: pnpm lint:css
+      - name: typecheck（vue-tsc 严格）
+        run: pnpm exec nuxt typecheck
+      - name: SSR build
+        run: pnpm build

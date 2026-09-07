@@ -106,6 +106,12 @@ func (p *Portal) Register(eng *gin.Engine) {
 	notify := eng.Group("/api/v1/payment/notify")
 	notify.Use(RequestIDMiddleware())
 	notify.POST("/:provider", p.handlePaymentNotify)
+
+	// 公开门户只读端点（SSR SEO 数据源，b4-5）：无鉴权，禁含任何用户态
+	pub := eng.Group("/api/v1/public")
+	pub.Use(RequestIDMiddleware())
+	pub.GET("/models", p.handlePublicModels)
+	pub.GET("/announcements", p.handlePublicAnnouncements)
 }
 
 func (p *Portal) blocked(login string) (time.Time, bool) {

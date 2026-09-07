@@ -1,9 +1,15 @@
 <script setup lang="ts">
-// 管理后台布局：信息密度优先（§11），顶栏 + 左侧分组导航。
-// 注：渠道/用户/模型/供应商/审计等面板随 B4-7 落地后挂入（当前不放置死链）。
+// 管理后台布局（§11 信息密度优先）：会话登录（B4-7 后端已支持会话/API Key 双路鉴权）
+const store = useUserStore()
 const groups = [
-  { title: '运营', items: [{ to: '/admin', label: '概览' }] },
+  { title: '运营', items: [{ to: '/admin', label: '概览' }, { to: '/admin/channels', label: '渠道' }, { to: '/admin/users', label: '用户' }] },
+  { title: '目录', items: [{ to: '/admin/models', label: '模型' }] },
 ]
+async function logout() {
+  try { await $fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'include' }) } catch { /* ignore */ }
+  store.reset()
+  await navigateTo('/login')
+}
 </script>
 
 <template>
@@ -18,6 +24,7 @@ const groups = [
       </nav>
       <div class="a-side__foot">
         <NuxtLink to="/" class="a-nav__link">← 门户</NuxtLink>
+        <el-button link type="primary" size="small" @click="logout">退出</el-button>
       </div>
     </aside>
     <section class="a-body">
@@ -28,12 +35,13 @@ const groups = [
 
 <style scoped>
 .a-shell { min-height: 100vh; display: flex; }
-.a-side { width: 208px; flex: none; border-right: 1px solid var(--cf-line); background: var(--cf-surface); padding: 16px 12px; display: flex; flex-direction: column; gap: 16px; }
+.a-side { width: 208px; flex: none; border-right: 1px solid var(--cf-line); background: var(--cf-surface); padding: 16px 12px; display: flex; flex-direction: column; gap: 16px; position: sticky; top: 0; height: 100vh; }
 .a-brand { font-weight: 700; padding: 4px 12px 12px; border-bottom: 1px solid var(--cf-line); color: var(--cf-text); }
 .a-nav { flex: 1; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .a-nav__title { margin: 10px 12px 2px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--cf-text-tertiary); }
 .a-nav__link { padding: 6px 12px; border-radius: 6px; color: var(--cf-text-secondary); }
 .a-nav__link:hover { background: var(--cf-surface-hover); color: var(--cf-text); text-decoration: none; }
 .a-nav__link--active { background: color-mix(in srgb, var(--cf-brand-500) 10%, transparent); color: var(--cf-brand-500); font-weight: 600; }
-.a-body { flex: 1; min-width: 0; padding: 20px 24px; background: var(--cf-bg); }
+.a-side__foot { border-top: 1px solid var(--cf-line); padding-top: 10px; display: flex; flex-direction: column; gap: 2px; }
+.a-body { flex: 1; min-width: 0; padding: 20px 24px; }
 </style>
