@@ -20,7 +20,7 @@ const tokenOpen = ref(false)
 // 状态中文展示（页面状态一律中文）
 const statusMap: Record<string, { label: string; cls: string }> = {
   active: { label: '启用', cls: 'cf-tag--success' },
-  disabled: { label: '已禁用', cls: 'cf-tag--muted' },
+  disabled: { label: '已禁用', cls: 'cf-tag--danger' },
   expired: { label: '已过期', cls: 'cf-tag--warning' },
 }
 function statusOf(s: string) { return statusMap[s] ?? { label: s, cls: 'cf-tag--muted' } }
