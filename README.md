@@ -261,6 +261,18 @@ cd frontend && pnpm install --frozen-lockfile && pnpm dev   # http://127.0.0.1:3
 - 管理端：`/admin`（渠道 / 模型 / 用户，会话登录；需 admin/super 角色）
 - dev 代理 `/api → http://127.0.0.1:8080`；生产同域由 ingress 保证（`NUXT_PUBLIC_SITE_URL` / `NUXT_API_SERVER_BASE` 覆盖站点基址与 SSR 后端直连地址）
 
+### 4. 生产容器化部署（2026-09-08 落地）
+Dockerfile 与生产编排已随仓库提供（此前 README 声称全容器化但无镜像文件，审计修复）：
+```bash
+# 必填环境变量（缺失即 compose 校验失败）：
+#   POSTGRES_PASSWORD / RABBITMQ_PASSWORD / CLOUDFOG_MASTER_KEY(64hex) / CLOUDFOG_API_KEY_SALT
+make docker-up      # 构建镜像并拉起 migrate(一次性) + api + worker + scheduler + web + 存储
+make docker-down
+```
+- 镜像：`backend/Dockerfile`（golang:1.27.1 静态编译 → alpine:3.24 非 root）、`frontend/Dockerfile`（构建期 .output → node:24 运行时非 root）；编排：`deploy/docker-compose.prod.yml`。
+- 角色分离：`--role=api|worker|scheduler`，migrate 一次性成功退出后业务容器才启动（`RequireSchemaVersion` 二次门禁）。
+- 边界：TLS 终止由前置 Nginx/Caddy 负责（会话 Cookie Secure 标志与 HSTS 届时按部署配置）。
+
 ### 常用命令
 ```bash
 make frontend-install frontend-tokens frontend-lint frontend-typecheck   # 前端门禁（install/tokens/stylelint/typecheck）

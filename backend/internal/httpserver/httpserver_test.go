@@ -28,6 +28,28 @@ func TestHealthzReadyz(t *testing.T) {
 	}
 }
 
+// 安全响应头（08 §9）：全站必须带 nosniff/DENY/CSP 等基础头。
+func TestSecurityHeaders(t *testing.T) {
+	s := New(":0", nil, discardLog())
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "http://127.0.0.1/healthz", nil)
+	w := httptest.NewRecorder()
+	s.srv.Handler.ServeHTTP(w, req)
+
+	want := map[string]string{
+		"X-Content-Type-Options": "nosniff",
+		"X-Frame-Options":        "DENY",
+		"Referrer-Policy":        "no-referrer",
+	}
+	for k, v := range want {
+		if got := w.Header().Get(k); got != v {
+			t.Fatalf("响应头 %s = %q, want %q", k, got, v)
+		}
+	}
+	if csp := w.Header().Get("Content-Security-Policy"); csp == "" {
+		t.Fatal("缺少 Content-Security-Policy（API 应全闭）")
+	}
+}
+
 // 业务路由未挂载前：未知路径应 404（gin 默认）。
 func TestUnknownPath404(t *testing.T) {
 	s := New(":0", nil, discardLog())

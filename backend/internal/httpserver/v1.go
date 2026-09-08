@@ -14,6 +14,7 @@ import (
 	"cloudfog/internal/auth"
 	"cloudfog/internal/gateway"
 	"cloudfog/internal/ir"
+	"cloudfog/internal/pkg/adapter"
 )
 
 // API v1 业务端点（07 §2.1 OpenAI 兼容主入口）。
@@ -162,20 +163,52 @@ func (a *API) writeChatStream(c *gin.Context, res *gateway.Result) {
 		_, err = c.Writer.Write(append(append([]byte("data: "), b...), '\n', '\n'))
 		return err
 	}
+	// 流式计量（2026-09-08 修复）：此前流式请求完全不计量不结算（白嫖）。
+	// 此处累计上游 usage 与已下发输出字符数，流结束/断连/上游错误时调用 Settle 一次。
+	var (
+		su      gateway.StreamUsage
+		chars   int
+		status  = http.StatusOK
+		errCode string
+		settled bool
+	)
+	settle := func() {
+		if settled || res.Settle == nil {
+			return
+		}
+		settled = true
+		su.DeltaChars = chars
+		res.Settle(su, status, errCode)
+	}
+	defer settle()
+
 	for ev := range res.Events {
 		// 写入失败（客户端断连/写超时）即终止：defer 关闭上游 body，解析 goroutine 随之退出，
 		// 避免断线后仍持续拉取并消费上游 SSE。
 		switch ev.Type {
 		case ir.EvDelta:
+			chars += len(ev.Delta)
 			if err := writeSSE(streamChunk(chunkID, res.Channel.UpstreamModel, gin.H{"content": ev.Delta}, nil)); err != nil {
 				return
 			}
 		case ir.EvReasoningDelta:
+			chars += len(ev.Delta)
 			if err := writeSSE(streamChunk(chunkID, res.Channel.UpstreamModel, gin.H{"reasoning_content": ev.Delta}, nil)); err != nil {
 				return
 			}
+		case ir.EvToolCallDelta:
+			if err := writeSSE(streamChunk(chunkID, res.Channel.UpstreamModel, toolCallDelta(ev.ToolCallDelta), nil)); err != nil {
+				return
+			}
+		case ir.EvUsage:
+			su.Usage = ev.Usage
 		case ir.EvError:
 			a.log().Error("chat 流错误", "err", ev.Err)
+			status, errCode = http.StatusBadGateway, "upstream_error"
+			var ue *adapter.UpstreamError
+			if errors.As(ev.Err, &ue) && ue.HTTPStatus >= 400 {
+				status, errCode = ue.HTTPStatus, ue.Code
+			}
 			return
 		case ir.EvDone:
 			if err := writeSSE(streamChunk(chunkID, res.Channel.UpstreamModel, nil, &ev.FinishReason)); err != nil {
@@ -188,8 +221,30 @@ func (a *API) writeChatStream(c *gin.Context, res *gateway.Result) {
 		fl.Flush()
 	}
 	// 上游异常结束（无 Done）：补一个空完成避免客户端永久等待
+	status, errCode = http.StatusBadGateway, "upstream_error"
 	_, _ = fmt.Fprint(c.Writer, "data: [DONE]\n\n")
 	fl.Flush()
+}
+
+// toolCallDelta 工具调用增量还原为 OpenAI chunk delta（07 §2.1）。
+func toolCallDelta(d *ir.ToolCallDelta) gin.H {
+	if d == nil {
+		return gin.H{}
+	}
+	tc := gin.H{"index": d.Index}
+	if d.ID != "" {
+		tc["id"] = d.ID
+		tc["type"] = "function"
+	}
+	fn := gin.H{}
+	if d.Name != "" {
+		fn["name"] = d.Name
+	}
+	if d.Arguments != "" {
+		fn["arguments"] = d.Arguments
+	}
+	tc["function"] = fn
+	return gin.H{"tool_calls": []gin.H{tc}}
 }
 
 func streamChunk(id, model string, delta gin.H, finish *ir.FinishReason) gin.H {

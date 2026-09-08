@@ -4,7 +4,7 @@ BACKEND_DIR := backend
 FRONTEND_DIR := frontend
 COMPOSE_FILE := deploy/docker-compose.dev.yml
 
-.PHONY: dev compose-up compose-down build vet lint test-unit test-integration test-race migrate-up migrate-down migrate-status tidy frontend-install frontend-tokens frontend-lint frontend-typecheck frontend-dev
+.PHONY: dev compose-up compose-down build vet lint test-unit test-integration test-race migrate-up migrate-down migrate-status tidy frontend-install frontend-tokens frontend-lint frontend-typecheck frontend-dev frontend-build docker-build docker-up docker-down
 
 ## 拉起本地存储（PG18 + Redis 8.10 + RabbitMQ 4.2），容器已存在且健康则跳过
 compose-up:
@@ -66,3 +66,17 @@ migrate-down:
 
 migrate-status:
 	cd $(BACKEND_DIR) && go run ./cmd/cloudfog migrate status
+
+frontend-build:
+	cd $(FRONTEND_DIR) && pnpm build
+
+## ── 容器（生产编排：deploy/docker-compose.prod.yml）──
+docker-build:
+	docker compose -f deploy/docker-compose.prod.yml build
+
+docker-up: docker-build
+	docker compose -f deploy/docker-compose.prod.yml up -d
+	docker compose -f deploy/docker-compose.prod.yml ps
+
+docker-down:
+	docker compose -f deploy/docker-compose.prod.yml down

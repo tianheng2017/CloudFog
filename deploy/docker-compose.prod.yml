@@ -1,0 +1,157 @@
+# 云之雾生产编排（10 §2/§3）：镜像版本与本地开发一致，禁版本漂移。
+# 用法：docker compose -f deploy/docker-compose.prod.yml up -d --build
+# 前置：同目录提供 .env（或导出环境变量），必填项缺失时 ${VAR:?err} 会让 compose 直接失败（fail-fast）。
+#
+# 边界：本编排不含 TLS/反代。生产应在前置 Nginx/Caddy 终结 TLS，并按需打开会话 Cookie 的
+# Secure 标志（当前后端为硬编码 false，见 httpserver/portal_auth.go；同源 HTTP 直连场景可用）。
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: cloudfog-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cloudfog}
+      POSTGRES_USER: ${POSTGRES_USER:-cloudfog}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 必填}
+    # PG18+ 镜像约定：挂载父目录（数据落在其下 18/docker），挂 /var/lib/postgresql/data 会被判 unused 而拒绝启动
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cloudfog} -d ${POSTGRES_DB:-cloudfog}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.10-alpine
+    container_name: cloudfog-redis
+    # noeviction：限流计数/分布式锁/预扣不允许被 LRU 淘汰（10 §2）
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:4.2-management
+    container_name: cloudfog-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-cloudfog}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD 必填}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-cloudfog}
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+      - ./rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # 迁移为一次性任务：成功退出即结束（restart: no）；版本门禁由进程启动时的
+  # RequireSchemaVersion 二次校验，迁移未执行到位的服务会拒绝启动。
+  migrate:
+    build:
+      context: ../backend
+    image: cloudfog/backend:latest
+    command: ["migrate", "up"]
+    environment: &backend_env
+      CLOUDFOG_DSN: postgres://${POSTGRES_USER:-cloudfog}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-cloudfog}?sslmode=disable
+      CLOUDFOG_REDIS_ADDR: redis:6379
+      CLOUDFOG_RABBITMQ_URL: amqp://${RABBITMQ_USER:-cloudfog}:${RABBITMQ_PASSWORD:?}@rabbitmq:5672/${RABBITMQ_VHOST:-cloudfog}
+      CLOUDFOG_MASTER_KEY: ${CLOUDFOG_MASTER_KEY:?CLOUDFOG_MASTER_KEY 必填（64 位 hex）}
+      CLOUDFOG_API_KEY_SALT: ${CLOUDFOG_API_KEY_SALT:?CLOUDFOG_API_KEY_SALT 必填}
+      CLOUDFOG_LOG_LEVEL: ${CLOUDFOG_LOG_LEVEL:-info}
+      CLOUDFOG_LOG_FORMAT: json
+      SERVER_ADDR: :8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: no
+
+  api:
+    build:
+      context: ../backend
+    image: cloudfog/backend:latest
+    command: ["--role=api"]
+    environment: *backend_env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ../backend
+    image: cloudfog/backend:latest
+    command: ["--role=worker"]
+    environment: *backend_env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+    # worker 无 HTTP 端口：禁用镜像默认 healthz 探测
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+
+  scheduler:
+    build:
+      context: ../backend
+    image: cloudfog/backend:latest
+    command: ["--role=scheduler"]
+    environment: *backend_env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../frontend
+      args:
+        NUXT_API_SERVER_BASE: http://api:8080
+        NUXT_PUBLIC_SITE_URL: ${NUXT_PUBLIC_SITE_URL:-https://api.cloudfog.example}
+    image: cloudfog/frontend:latest
+    environment:
+      NUXT_API_SERVER_BASE: http://api:8080
+      NUXT_PUBLIC_SITE_URL: ${NUXT_PUBLIC_SITE_URL:-https://api.cloudfog.example}
+      NITRO_PORT: 3000
+      NITRO_HOST: 0.0.0.0
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
+      interval: 30s
+      timeout: 3s
+      start_period: 15s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  rabbitmqdata:

@@ -18,9 +18,14 @@ type UsageLogQuery struct {
 
 const maxQueryLimit = 100
 
+// usageListColumns 明细查询列（分区大表避免全列 IO：不取 price_snapshot/mapping_chain/
+// client_ip/user_agent 等投影外字段，2026-09-08 优化）。
+const usageListColumns = "id, request_id, model, provider_code, stream, status_code, error_code, " +
+	"input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, total_cost, duration_ms, created_at"
+
 // ListUsageLogs 用量明细（按 created_at 倒序分页）。limit 保护 + 兜底默认 20。
 func (r *Repository) ListUsageLogs(ctx context.Context, q UsageLogQuery) ([]model.UsageLog, int64, error) {
-	db := r.db.WithContext(ctx).Model(&model.UsageLog{}).Where("user_id = ?", q.UserID)
+	db := r.db.WithContext(ctx).Model(&model.UsageLog{}).Select(usageListColumns).Where("user_id = ?", q.UserID)
 	if q.From != nil {
 		db = db.Where("created_at >= ?", *q.From)
 	}

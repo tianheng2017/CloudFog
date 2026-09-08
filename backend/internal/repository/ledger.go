@@ -30,6 +30,28 @@ func (r *Repository) LedgerExistsByRequestID(ctx context.Context, requestID stri
 	return n > 0, nil
 }
 
+// LedgerExistsByRequestIDs 批量判定 request_id 是否已有流水（reclaim 用；单条 SQL 替代 N 次查询）。
+func (r *Repository) LedgerExistsByRequestIDs(ctx context.Context, requestIDs []string) (map[string]bool, error) {
+	out := make(map[string]bool, len(requestIDs))
+	if len(requestIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		RequestID string `gorm:"column:request_id"`
+	}
+	err := r.db.WithContext(ctx).Model(&model.BillingLedger{}).
+		Select("request_id").
+		Where("request_id IN ? AND request_id <> ''", requestIDs).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.RequestID] = true
+	}
+	return out, nil
+}
+
 // IsUniqueViolation 判定错误是否 PostgreSQL 唯一键冲突（SQLSTATE 23505）。
 // settle/refund/幂等表的最终防重（06 §10.3）都依赖此判定区分"重复到达"与"真实错误"。
 func IsUniqueViolation(err error) bool {

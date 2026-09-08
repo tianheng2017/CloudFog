@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,11 +14,13 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"cloudfog/internal/billing"
 	"cloudfog/internal/ir"
 	"cloudfog/internal/model"
 	_ "cloudfog/internal/pkg/adapter/openai" // 注册 openai 适配器
 	"cloudfog/internal/repository"
 	"cloudfog/internal/router"
+	"cloudfog/internal/task"
 )
 
 type fakeCatalog struct {
@@ -176,3 +179,141 @@ func TestChatStreamSSE(t *testing.T) {
 func newDecimal(v int64) (d decimal.Decimal) {
 	return decimal.NewFromInt(v)
 }
+
+// ── 流式计量（2026-09-08：此前流式请求不计量不结算=白嫖）────────────────
+
+type recEnqueuer struct{ tasks []task.Task }
+
+func (r *recEnqueuer) Enqueue(_ context.Context, t task.Task) error {
+	r.tasks = append(r.tasks, t)
+	return nil
+}
+func (r *recEnqueuer) EnqueueIn(ctx context.Context, t task.Task, _ time.Duration) error {
+	return r.Enqueue(ctx, t)
+}
+
+func sseServer(t *testing.T, body string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func streamGateway(cat router.Catalog, enq task.TaskEnqueuer) *Gateway {
+	gw := mustGateway(cat, &fakeBal{bal: &model.UserBalance{UserID: 1, Balance: model.Decimal{Decimal: newDecimal(1)}}})
+	gw.Prod = &billing.Producer{Enq: enq}
+	return gw
+}
+
+func streamReq() *ir.CanonicalRequest {
+	return &ir.CanonicalRequest{Model: "gpt-4o", Stream: true,
+		Messages: []ir.Message{{Role: ir.RoleUser, Content: []ir.ContentPart{{Type: ir.PartText, Text: "hello world"}}}}}
+}
+
+// TestChatStreamMetering 流式终态必须投递 usage:write + billing:settle（上游 usage 优先）。
+func TestChatStreamMetering(t *testing.T) {
+	srv := sseServer(t, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hel\"}}]}\n\n"+
+		"data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"lo\"},\"finish_reason\":\"stop\"}]}\n\n"+
+		"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":2}}\n\n"+
+		"data: [DONE]\n\n")
+	enq := &recEnqueuer{}
+	gw := streamGateway(&fakeCatalog{
+		models:     map[string]*model.Model{"gpt-4o": activeModel()},
+		candidates: []*repository.RouteCandidate{openAICandidate(1, srv.URL)},
+	}, enq)
+
+	res, err := gw.Chat(context.Background(), callerOK(), streamReq(), "req-stream-1")
+	if err != nil {
+		t.Fatalf("流式应成功: %v", err)
+	}
+	defer res.Close()
+	if res.Settle == nil {
+		t.Fatal("流式结果必须携带计量钩子（Settle）")
+	}
+	var usage *ir.Usage
+	chars := 0
+	for e := range res.Events {
+		if e.Type == ir.EvDelta {
+			chars += len(e.Delta)
+		}
+		if e.Type == ir.EvUsage {
+			usage = e.Usage
+		}
+	}
+	res.Settle(StreamUsage{Usage: usage, DeltaChars: chars}, 200, "")
+
+	if len(enq.tasks) != 2 {
+		t.Fatalf("应投递 usage:write + billing:settle 两条任务, got %d", len(enq.tasks))
+	}
+	var u billing.UsageLogPayload
+	if err := json.Unmarshal(enq.tasks[0].Payload, &u); err != nil {
+		t.Fatal(err)
+	}
+	if enq.tasks[0].Type != task.TaskUsageWrite || enq.tasks[1].Type != task.TaskBillingSettle {
+		t.Fatalf("任务类型/顺序错误: %s %s", enq.tasks[0].Type, enq.tasks[1].Type)
+	}
+	if !u.Stream || u.Tokens.Input != 4 || u.Tokens.Output != 2 || u.StatusCode != 200 {
+		t.Fatalf("流式用量归集错误: %+v", u)
+	}
+	if u.RequestID != "req-stream-1" {
+		t.Fatalf("request_id 未透传: %s", u.RequestID)
+	}
+}
+
+// TestChatStreamMeteringEstimate 上游未回 usage 时按输出字符粗估，杜绝零用量白嫖。
+func TestChatStreamMeteringEstimate(t *testing.T) {
+	srv := sseServer(t, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"1234567890\"}}]}\n\n"+
+		"data: [DONE]\n\n")
+	enq := &recEnqueuer{}
+	gw := streamGateway(&fakeCatalog{
+		models:     map[string]*model.Model{"gpt-4o": activeModel()},
+		candidates: []*repository.RouteCandidate{openAICandidate(1, srv.URL)},
+	}, enq)
+
+	res, err := gw.Chat(context.Background(), callerOK(), streamReq(), "req-stream-2")
+	if err != nil {
+		t.Fatalf("流式应成功: %v", err)
+	}
+	defer res.Close()
+	chars := 0
+	for e := range res.Events {
+		if e.Type == ir.EvDelta {
+			chars += len(e.Delta)
+		}
+	}
+	res.Settle(StreamUsage{DeltaChars: chars}, 200, "")
+
+	var u billing.UsageLogPayload
+	if err := json.Unmarshal(enq.tasks[0].Payload, &u); err != nil {
+		t.Fatal(err)
+	}
+	if u.Tokens.Input <= 0 {
+		t.Fatalf("输入 token 应有粗估值: %+v", u)
+	}
+	if u.Tokens.Output != chars/4 {
+		t.Fatalf("输出 token 应按字符粗估: got %d, chars %d", u.Tokens.Output, chars)
+	}
+}
+
+// TestChatStreamBillingUnavailable 启用预扣但无投递器时流式也必须 fail-closed（防白嫖）。
+func TestChatStreamBillingUnavailable(t *testing.T) {
+	srv := sseServer(t, "data: [DONE]\n\n")
+	gw := mustGateway(&fakeCatalog{
+		models:     map[string]*model.Model{"gpt-4o": activeModel()},
+		candidates: []*repository.RouteCandidate{openAICandidate(1, srv.URL)},
+	}, &fakeBal{bal: &model.UserBalance{UserID: 1, Balance: model.Decimal{Decimal: newDecimal(1)}}})
+	gw.Res = &fakeReserve{} // 启用预扣但 Prod 为空
+	_, err := gw.Chat(context.Background(), callerOK(), streamReq(), "req-stream-3")
+	var api *APIError
+	if !errors.As(err, &api) || api.Status != 503 || api.Code != "billing_unavailable" {
+		t.Fatalf("流式应 fail-closed 503 billing_unavailable, got %v", err)
+	}
+}
+
+type fakeReserve struct{}
+
+func (fakeReserve) Reserve(context.Context, int64, string, decimal.Decimal) error { return nil }
+func (fakeReserve) Reset(context.Context, int64, string) error                    { return nil }

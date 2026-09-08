@@ -9,6 +9,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -34,8 +36,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// schemaVersion 本版本要求的迁移基线（migrations 文件名前缀 20260907000001：auth_sessions）。
-const schemaVersion uint64 = 20260907000001
+// schemaVersion 本版本要求的迁移基线（migrations 文件名前缀 20260908000001：perf_indexes）。
+const schemaVersion uint64 = 20260908000001
 
 func main() {
 	os.Exit(run(os.Args[1:]))
@@ -112,7 +114,18 @@ func startRoles(role, configPath string) error {
 
 	// 业务装配：repository + Redis（预扣缓存）+ billing 引擎 handler 注册（b2-6）
 	repo := repository.New(db)
-	rds := redis.NewClient(&redis.Options{Addr: cfg.Redis.Addr, Password: cfg.Redis.Password, DB: 0})
+	// Redis 超时与池（2026-09-08 接线：此前 pool_size 为死配置且无任何超时，
+	// Redis 不可达时会长时间阻塞请求路径上的预扣判定）。
+	rds := redis.NewClient(&redis.Options{
+		Addr:         cfg.Redis.Addr,
+		Password:     cfg.Redis.Password,
+		DB:           cfg.Redis.DB,
+		PoolSize:     cfg.Redis.PoolSize,
+		DialTimeout:  2 * time.Second,
+		ReadTimeout:  1 * time.Second,
+		WriteTimeout: 1 * time.Second,
+		MaxRetries:   1,
+	})
 	defer func() { _ = rds.Close() }()
 	reserve := billing.NewReserve(rds, repo)
 	if err := (&billing.Engine{Repo: repo, Cache: reserve}).Register(); err != nil {
@@ -160,10 +173,24 @@ func startRoles(role, configPath string) error {
 
 	var srv *httpserver.Server
 	if roles["api"] {
-		srv = httpserver.New(cfg.Server.Addr, db, log)
+		// HTTP 超时接线（2026-09-08）：read/write/idle 此前仅存在于配置未生效，
+		// 慢连接可长期占用；write=0 保留流式长响应语义。
+		srv = httpserver.New(cfg.Server.Addr, db, log, httpserver.WithTimeouts(
+			cfg.Server.ReadTimeout, cfg.Server.WriteTimeout, cfg.Server.IdleTimeout))
+		// 上游 HTTP 客户端（2026-09-08）：此前每请求新建 client，连接零复用且
+		// upstream_max_idle_conns/idle_conn_timeout 为死配置。
+		upstream := &http.Client{
+			Timeout: cfg.Gateway.FirstTokenTimeout + cfg.Gateway.StreamIdleTimeout,
+			Transport: &http.Transport{
+				DialContext:         (&net.Dialer{Timeout: cfg.Gateway.DialTimeout, KeepAlive: 30 * time.Second}).DialContext,
+				MaxIdleConns:        cfg.Gateway.UpstreamMaxIdleConns,
+				MaxIdleConnsPerHost: max(cfg.Gateway.UpstreamMaxIdleConns/10, 10),
+				IdleConnTimeout:     cfg.Gateway.UpstreamIdleConnTimeout,
+			},
+		}
 		// b2-5/6：v1 业务路由装配（鉴权 + 网关编排 + Redis 预扣 + 结算投递）
-		gw := &gateway.Gateway{Cat: repo, Bal: repo, List: repo, Res: reserve,
-			CredMK: cfg.Security.MasterKey, CredMKPrev: cfg.Security.PreviousMasterKey}
+		gw := &gateway.Gateway{Cat: repo, Bal: repo, List: repo, Res: reserve, HTTP: upstream,
+			CredMK: cfg.Security.MasterKey, CredMKPrev: cfg.Security.PreviousMasterKey, Log: log}
 		var enq task.TaskEnqueuer // 结算与支付回调共用 enqueuer
 		if enq0, err := schedulerEnqueuer(ctx, cfg); err == nil {
 			enq = enq0

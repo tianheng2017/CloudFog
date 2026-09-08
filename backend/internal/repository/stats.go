@@ -25,12 +25,11 @@ func (r *Repository) AggregateUsageDay(ctx context.Context, day time.Time) (int,
 		if e := tx.Where("stat_date = ?", statDate).Delete(&model.UsageDailyStat{}).Error; e != nil {
 			return e
 		}
-		for _, row := range rows {
-			if e := tx.Create(row).Error; e != nil {
-				return e
-			}
+		if len(rows) == 0 {
+			return nil
 		}
-		return nil
+		// 分批插入（2026-09-08 优化）：逐条 Create 等于 N 次往返，聚合行数随用户×模型增长。
+		return tx.CreateInBatches(rows, 500).Error
 	})
 	return len(rows), err
 }

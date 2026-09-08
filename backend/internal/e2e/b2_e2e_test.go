@@ -227,6 +227,10 @@ func TestB2EndToEnd(t *testing.T) {
 	t.Run("官方 OpenAI SDK 流式对话（M1）", func(t *testing.T) {
 		// 用官方 openai-go SDK，仅改 base_url + api key 即完成一次流式对话（M1 验收原文）。
 		// 此前流式 chunk 缺 SSE "data: " 前缀/空行分隔（标准解析失败）——已修复；此用例即回归锁。
+		// 2026-09-08：流式此前完全不计量不结算（白嫖）——补断言流结束同样落 usage + settle。
+		var beforeUsage, beforeSettle int64
+		_ = db.Model(&model.UsageLog{}).Where("user_id = ? AND stream = true", uid).Count(&beforeUsage).Error
+		_ = db.Model(&model.BillingLedger{}).Where("user_id = ? AND type = 'settle'", uid).Count(&beforeSettle).Error
 		client := openai.NewClient(
 			option.WithAPIKey(e2eAPIKey),
 			option.WithBaseURL(srv.URL+"/v1"),
@@ -250,6 +254,13 @@ func TestB2EndToEnd(t *testing.T) {
 		if got := sb.String(); !strings.Contains(got, "你好 SDK 流式") {
 			t.Fatalf("流式内容不符, got=%q", got)
 		}
+		// 流式计量闭环：usage（stream=true）与 settle 流水均需出现
+		waitFor(t, 15*time.Second, func() bool {
+			var usageN, settleN int64
+			_ = db.Model(&model.UsageLog{}).Where("user_id = ? AND stream = true", uid).Count(&usageN).Error
+			_ = db.Model(&model.BillingLedger{}).Where("user_id = ? AND type = 'settle'", uid).Count(&settleN).Error
+			return usageN > beforeUsage && settleN > beforeSettle
+		})
 	})
 
 	t.Run("余额不足 402 且不发上游", func(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -49,6 +50,10 @@ type Result struct {
 	Events  <-chan ir.StreamEvent
 	Close   func() // 流式上游 body 关闭（幂等）
 	Channel *router.Attempt
+	// Settle 流式计量钩子（非流为 nil）：出口层在流结束时以累计用量调用**一次**，
+	// 投递 usage:write + billing:settle（与非流同源同公式，03 §4.5）。
+	// 未启用计量（Prod 为空或 requestID 为空）时为 nil，出口层须判空。
+	Settle func(StreamUsage, int, string)
 }
 
 // Gateway 编排器（无状态，可并发；HTTP client 可注入便于测试/超时控制）。
@@ -68,6 +73,15 @@ type Gateway struct {
 	// 转发前解密；空 = 不支持密封凭证（仅 legacy 明文渠道可用，缺失时明确报错而非静默空凭据）。
 	CredMK     string
 	CredMKPrev string
+	// 日志（可选）：计量/结算投递失败等资金链路异常必须显式留痕（缺省 slog.Default）。
+	Log *slog.Logger
+}
+
+func (g *Gateway) log() *slog.Logger {
+	if g.Log != nil {
+		return g.Log
+	}
+	return slog.Default()
 }
 
 // Models 目录中全部可用模型（供 /v1/models）。
@@ -113,8 +127,9 @@ func (g *Gateway) Chat(ctx context.Context, c *Caller, req *ir.CanonicalRequest,
 		return nil, ErrInvalidRequest("调用上下文缺失")
 	}
 	// fail-closed：启用 Redis 预扣即代表依赖结算投递——Producer 缺失（broker 启动时不可用）
-	// 时不得放行非流计费请求，否则预扣永不释放/漏计费（b2-7 拉通审查发现）。
-	if !req.Stream && g.Res != nil && g.Prod == nil {
+	// 时不得放行计费请求（含流式：流式同样计量结算，否则为白嫖），
+	// 否则预扣永不释放/漏计费（b2-7 拉通审查发现；2026-09-08 扩展至流式）。
+	if g.Res != nil && g.Prod == nil {
 		return nil, ErrBillingUnavailable()
 	}
 	// 1) 模型解析：目录中须存在且可对外（deprecated/hidden 不可用）
@@ -180,7 +195,10 @@ func (g *Gateway) Chat(ctx context.Context, c *Caller, req *ir.CanonicalRequest,
 		if req.Stream {
 			r, done, err := g.tryStream(ctx, at, req)
 			if err == nil {
-				return &Result{Stream: true, Events: r, Close: done, Channel: at}, nil
+				// 流式计量：终态由出口层（流结束/断连/上游错误）调用 Settle 投递，
+				// 与非流共用 emitMetering（同快照、同公式，06 §2.2）。
+				return &Result{Stream: true, Events: r, Close: done, Channel: at,
+					Settle: g.streamSettler(ctx, c, at, req, res.Price, requestID)}, nil
 			}
 			lastErr = err
 		} else {

@@ -21,17 +21,31 @@ type Server struct {
 	eng *gin.Engine
 	db  *gorm.DB // nil 时 /readyz 跳过 DB 检查（测试便利；生产必配）
 	log *slog.Logger
+
+	readTimeout  time.Duration
+	writeTimeout time.Duration
+	idleTimeout  time.Duration
+}
+
+// Option 服务可选项（超时等；保持 New 签名向后兼容）。
+type Option func(*Server)
+
+// WithTimeouts 设置读/写/空闲超时（write=0 表示不限制，流式响应需要）。
+func WithTimeouts(read, write, idle time.Duration) Option {
+	return func(s *Server) {
+		s.readTimeout, s.writeTimeout, s.idleTimeout = read, write, idle
+	}
 }
 
 // New 构造服务（addr 形如 ":8080"，来自 config.Server.Addr）。
-func New(addr string, db *gorm.DB, log *slog.Logger) *Server {
+func New(addr string, db *gorm.DB, log *slog.Logger, opts ...Option) *Server {
 	gin.SetMode(gin.ReleaseMode)
 	eng := gin.New()
 	// 安全（08 §3.2）：IP 白名单以 ClientIP 判定——默认不信任任何代理，令
 	// ClientIP=RemoteAddr，杜绝伪造 X-Forwarded-For 绕过白名单。
 	// 部署在 LB/反代之后时，由部署层显式配置受信代理 CIDR（SetTrustedProxies）。
 	_ = eng.SetTrustedProxies(nil)
-	eng.Use(gin.Recovery())
+	eng.Use(gin.Recovery(), SecurityHeaders())
 
 	s := &Server{db: db, log: log}
 	s.eng = eng
@@ -60,12 +74,32 @@ func New(addr string, db *gorm.DB, log *slog.Logger) *Server {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
+	for _, o := range opts {
+		o(s)
+	}
 	s.srv = &http.Server{
 		Addr:              addr,
 		Handler:           eng,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       s.readTimeout,
+		WriteTimeout:      s.writeTimeout, // 0 = 不限（流式 SSE 必须）
+		IdleTimeout:       s.idleTimeout,
 	}
 	return s
+}
+
+// SecurityHeaders 基础安全响应头（08 §9；2026-09-08 补齐，此前全站零安全头）。
+// API 只输出 JSON：CSP 全闭 + 禁止嵌套 + 禁 MIME 嗅探；HSTS 由 TLS 终结层（Nginx/Caddy）下发。
+func SecurityHeaders() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		h := c.Writer.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
+		h.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+		c.Next()
+	}
 }
 
 // Serve 阻塞监听。正常返回 nil（含优雅关闭后 http.ErrServerClosed 归一化）。

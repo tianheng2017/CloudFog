@@ -74,16 +74,31 @@ func (r *Router) Plan(ctx context.Context, groupID int64, models []string) ([]*A
 		return nil, nil
 	}
 	now := r.now().UTC()
+	// 映射按 alias 记忆化：同一 alias 在「模型链 × 渠道」双层循环中会被重复查询 N 次
+	// （2026-09-08 优化：M×N 次 DB 往返 → M 次）。
+	memo := make(map[string][]model.ModelMapping, len(models))
+	rowsFor := func(alias string) ([]model.ModelMapping, error) {
+		if rows, ok := memo[alias]; ok {
+			return rows, nil
+		}
+		rows, err := r.cat.MappingRows(ctx, alias)
+		if err != nil {
+			return nil, err
+		}
+		memo[alias] = rows
+		return rows, nil
+	}
 	var attempts []*Attempt
 	for _, name := range models {
 		for _, c := range chans {
 			if !usableAt(c.Channel, now) {
 				continue
 			}
-			up, err := r.resolveUpstream(ctx, name, c.Channel.ID)
+			rows, err := rowsFor(name)
 			if err != nil {
 				return nil, err
 			}
+			up := resolveUpstream(rows, c.Channel.ID, name)
 			attempts = append(attempts, &Attempt{ModelName: name, Candidate: c, UpstreamModel: up})
 		}
 	}
@@ -92,22 +107,18 @@ func (r *Router) Plan(ctx context.Context, groupID int64, models []string) ([]*A
 
 // resolveUpstream 映射解析：渠道级精确 → 全局精确 → 原样透传（02 §5.3）。
 // 通配（alias 含 *）依赖模式查询，当前版本按精确匹配实现并透传兜底（演进见注释）。
-func (r *Router) resolveUpstream(ctx context.Context, alias string, channelID int64) (string, error) {
-	rows, err := r.cat.MappingRows(ctx, alias)
-	if err != nil {
-		return "", err
-	}
+func resolveUpstream(rows []model.ModelMapping, channelID int64, alias string) string {
 	for _, row := range rows {
 		if row.ChannelID != nil && *row.ChannelID == channelID {
-			return row.UpstreamModel, nil
+			return row.UpstreamModel
 		}
 	}
 	for _, row := range rows {
 		if row.ChannelID == nil {
-			return row.UpstreamModel, nil
+			return row.UpstreamModel
 		}
 	}
-	return alias, nil // 无映射：原样透传
+	return alias // 无映射：原样透传
 }
 
 // usableAt 当前时刻渠道是否可用（状态机字段取自 DB，05 §6 运行时维护）。

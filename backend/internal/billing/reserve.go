@@ -145,38 +145,68 @@ func (r *Reserve) Reclaim(ctx context.Context, olderThan time.Duration) (int, er
 		if err != nil {
 			return handled, fmt.Errorf("billing: reclaim 扫描失败: %w", err)
 		}
-		for _, k := range keys {
-			requestID := strings.TrimPrefix(k, "frozen:")
-			if requestID == "" || requestID == k {
-				continue
-			}
-			raw, err := r.cli.Get(ctx, k).Bytes()
+		// 2026-09-08 优化：MGET 批量取值（原逐条 GET）+ 一次 SQL 批量判定流水存在性
+		// （原逐条 LedgerExistsByRequestID = N 次查询）。
+		type candidate struct {
+			key       string
+			requestID string
+			rec       auditRec
+		}
+		var cands []candidate
+		if len(keys) > 0 {
+			vals, err := r.cli.MGet(ctx, keys...).Result()
 			if err != nil {
-				if errors.Is(err, redis.Nil) {
+				errs = append(errs, err)
+			}
+			for i, k := range keys {
+				requestID := strings.TrimPrefix(k, "frozen:")
+				if requestID == "" || requestID == k {
 					continue
 				}
-				errs = append(errs, err)
-				continue
+				if i >= len(vals) || vals[i] == nil {
+					continue // 键已过期/不存在
+				}
+				raw, ok := vals[i].(string)
+				if !ok {
+					continue
+				}
+				var rec auditRec
+				if err := json.Unmarshal([]byte(raw), &rec); err != nil || rec.UserID <= 0 || rec.Amount == "" || rec.At <= 0 {
+					continue // 旧格式/损坏：保守跳过（不释放不删除）
+				}
+				if time.Unix(rec.At, 0).After(deadline) {
+					continue // 未超阈值：仍在合法结算/重试窗口内
+				}
+				cands = append(cands, candidate{key: k, requestID: requestID, rec: rec})
 			}
-			var rec auditRec
-			if err := json.Unmarshal(raw, &rec); err != nil || rec.UserID <= 0 || rec.Amount == "" || rec.At <= 0 {
-				continue // 旧格式/损坏：保守跳过（不释放不删除）
+		}
+		// 批量判定：已有 settle 流水的请求不得重复释放（06 §3.3）
+		settled := map[string]bool{}
+		judged := true
+		if len(cands) > 0 {
+			ids := make([]string, 0, len(cands))
+			for _, cd := range cands {
+				ids = append(ids, cd.requestID)
 			}
-			if time.Unix(rec.At, 0).After(deadline) {
-				continue // 未超阈值：仍在合法结算/重试窗口内
-			}
-			exists, err := r.repo.LedgerExistsByRequestID(ctx, requestID)
+			have, err := r.repo.LedgerExistsByRequestIDs(ctx, ids)
 			if err != nil {
 				errs = append(errs, err)
-				continue
+				judged = false // 判定失败：本批不释放（宁可等下轮 reclaim，不可误释放）
+			} else {
+				settled = have
 			}
-			if !exists {
-				if _, err := reclaimScript.Run(ctx, r.cli, []string{balanceKey(rec.UserID)}, rec.Amount).Result(); err != nil {
+		}
+		for _, cd := range cands {
+			if !judged {
+				break
+			}
+			if !settled[cd.requestID] {
+				if _, err := reclaimScript.Run(ctx, r.cli, []string{balanceKey(cd.rec.UserID)}, cd.rec.Amount).Result(); err != nil {
 					errs = append(errs, err)
 					continue
 				}
 			}
-			_ = r.cli.Del(ctx, k).Err() // 已处理（释放或已有流水）均清理审计键
+			_ = r.cli.Del(ctx, cd.key).Err() // 已处理（释放或已有流水）均清理审计键
 			handled++
 		}
 		if next == 0 {
