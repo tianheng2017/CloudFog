@@ -10,20 +10,15 @@ const cards = [
   { to: '/console/billing', icon: '💳', title: '账单与余额', desc: '余额、充值入账与结算流水' },
 ]
 
-const balance = ref<string | null>(null)
-onMounted(async () => {
-  try {
-    const b = await $fetch<{ balance: string }>('/api/v1/me/balance', { credentials: 'include' })
-    balance.value = b.balance
-  } catch { /* 忽略：页内仍可用 */ }
-})
+const { data: bal } = useApiResource<{ balance: string } | null>(
+  () => apiFetch('/api/v1/me/balance'), null)
 </script>
 
 <template>
   <div>
     <h1 class="pg-title">概览</h1>
     <p class="pg-sub">
-      欢迎回来{{ store.me ? `，${store.me.username}` : '' }}<span v-if="balance"> · 可用余额 <span class="num" style="font-weight: 650">$ {{ balance }}</span></span>
+      欢迎回来{{ store.me ? `，${store.me.username}` : '' }}<span v-if="bal"> · 可用余额 <span class="num" style="font-weight: 650">$ {{ bal.balance }}</span></span>
     </p>
 
     <div class="grid">

@@ -9,13 +9,14 @@ const nav = [
   { to: '/console/billing', label: '账单与充值' },
 ]
 const setTheme = inject<(d: boolean) => void>('theme-toggle')
-const dark = ref(false)
+// 初值取当前实际主题（此前恒 false → 暗色下开关显示"亮"，需点两次才正确）
+const dark = ref(import.meta.client && document.documentElement.classList.contains('dark'))
 function toggleTheme() {
   dark.value = !document.documentElement.classList.contains('dark')
   setTheme?.(dark.value)
 }
 async function logout() {
-  try { await $fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'include' }) } catch { /* 忽略 */ }
+  try { await apiFetch('/api/v1/auth/logout', { method: 'POST' }) } catch { /* 忽略 */ }
   store.reset()
   await navigateTo('/login')
 }
@@ -57,4 +58,14 @@ async function logout() {
 .c-body { flex: 1; min-width: 0; padding: 20px 28px; }
 .c-top { display: flex; align-items: center; justify-content: flex-end; gap: 16px; margin-bottom: 20px; }
 .c-top__user { font-size: 13px; color: var(--cf-text-secondary); }
+
+/* 窄屏（2026-09-08）：固定 220px 侧栏在手机上挤压正文 → 折叠为顶部横向导航 */
+@media (width < 860px) {
+  .c-shell { flex-direction: column; }
+  .c-side { width: auto; height: auto; position: static; flex-direction: row; align-items: center; gap: 12px; padding: 10px 12px; border-right: none; border-bottom: 1px solid var(--cf-line); overflow-x: auto; }
+  .c-nav { flex-direction: row; gap: 4px; }
+  .c-nav__link { white-space: nowrap; }
+  .c-side__foot { margin-left: auto; border-top: none; padding-top: 0; }
+  .c-body { padding: 16px; }
+}
 </style>

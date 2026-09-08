@@ -7,6 +7,21 @@ const form = reactive({ login: '', password: '' })
 const loading = ref(false)
 const errorMsg = ref('')
 
+// 站内安全跳转：仅接受当前源的绝对地址。
+// 注意不能只判 `//` —— 浏览器会把 `/\evil.com` 规范化为 `//evil.com`（开放重定向），
+// 因此统一用 URL 解析后比对 origin，并显式拒绝含反斜杠/控制字符的值。
+function safeRedirect(): string {
+  const q = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+  if (!q || q.includes('\\') || /[\t\r\n]/.test(q)) return '/console'
+  try {
+    const u = new URL(q, window.location.origin)
+    if (u.origin !== window.location.origin) return '/console'
+    return u.pathname + u.search + u.hash
+  } catch {
+    return '/console'
+  }
+}
+
 async function submit() {
   errorMsg.value = ''
   if (!form.login || !form.password) { errorMsg.value = '请输入账号与密码'; return }
@@ -17,12 +32,9 @@ async function submit() {
       body: { login: form.login, password: form.password },
     })
     await store.fetchMe()
-    // 仅接受站内相对路径（杜绝 //evil 协议相对或外域 redirect）
-    const q = typeof route.query.redirect === 'string' ? route.query.redirect : ''
-    const redirect = q.startsWith('/') && !q.startsWith('//') ? q : '/console'
-    await navigateTo(redirect)
+    await navigateTo(safeRedirect())
   } catch (e: any) {
-    errorMsg.value = e?.data?.error?.message || '登录失败，请重试'
+    errorMsg.value = apiMessage(e, '登录失败，请重试')
   } finally {
     loading.value = false
   }

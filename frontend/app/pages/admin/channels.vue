@@ -1,21 +1,16 @@
 <script setup lang="ts">
 // 管理 · 渠道（只读首屏；凭证绝不显示）
 definePageMeta({ layout: 'admin' })
-const items = ref<any[]>([])
-const loading = ref(true)
-onMounted(async () => {
-  try {
-    const r = await $fetch<{ items: any[] }>('/api/v1/admin/channels', { credentials: 'include' })
-    items.value = r.items || []
-  } catch { ElMessage.error('渠道列表加载失败') } finally { loading.value = false }
-})
+const { data: channels, loading, error, reload } = useApiResource<{ items: any[] }>(
+  () => apiFetch('/api/v1/admin/channels'), { items: [] })
 </script>
 
 <template>
   <div>
     <h1 class="pg-title">渠道</h1>
+    <div v-if="error" class="err">{{ error }} <el-button link type="primary" @click="reload">重试</el-button></div>
     <el-card shadow="never" style="margin-top: 16px">
-      <el-table v-loading="loading" :data="items" style="width: 100%" empty-text="暂无渠道">
+      <el-table v-loading="loading" :data="channels.items" style="width: 100%" empty-text="暂无渠道">
         <el-table-column prop="id" label="ID" width="70"><template #default="{ row }"><span class="num">{{ row.id }}</span></template></el-table-column>
         <el-table-column prop="name" label="名称" min-width="150" />
         <el-table-column prop="provider_code" label="供应商" width="120" />
@@ -30,4 +25,5 @@ onMounted(async () => {
 
 <style scoped>
 .pg-title { font-size: 22px; font-weight: 700; }
+.err { margin-top: 12px; font-size: 13px; color: var(--cf-semantic-danger); }
 </style>

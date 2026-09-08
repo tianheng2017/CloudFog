@@ -7,7 +7,7 @@ const groups = [
   { title: '目录', items: [{ to: '/admin/models', label: '模型' }] },
 ]
 async function logout() {
-  try { await $fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'include' }) } catch { /* ignore */ }
+  try { await apiFetch('/api/v1/auth/logout', { method: 'POST' }) } catch { /* ignore */ }
   store.reset()
   await navigateTo('/login')
 }
@@ -47,4 +47,16 @@ async function logout() {
 .a-nav__link--active { background: color-mix(in srgb, var(--cf-brand-500) 10%, transparent); color: var(--cf-brand-500); font-weight: 600; }
 .a-side__foot { border-top: 1px solid var(--cf-line); padding-top: 10px; display: flex; flex-direction: column; gap: 2px; }
 .a-body { flex: 1; min-width: 0; padding: 20px 24px; }
+
+/* 窄屏（2026-09-08）：侧栏折叠为顶部横向导航 */
+@media (width < 860px) {
+  .a-shell { flex-direction: column; }
+  .a-side { width: auto; height: auto; position: static; padding: 10px 12px; border-right: none; border-bottom: 1px solid var(--cf-line); gap: 6px; overflow-x: auto; }
+  .a-brand { border-bottom: none; padding-bottom: 4px; }
+  .a-nav { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .a-nav__title { margin: 0 4px 0 0; }
+  .a-nav__link { white-space: nowrap; }
+  .a-side__foot { flex-direction: row; align-items: center; gap: 10px; border-top: none; padding-top: 0; }
+  .a-body { padding: 16px; }
+}
 </style>
